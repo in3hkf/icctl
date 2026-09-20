@@ -1,0 +1,11 @@
+[package]
+name = "ci-v"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+description.workspace = true
+license-file.workspace = true
+
+[dependencies]
