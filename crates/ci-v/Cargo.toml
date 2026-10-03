@@ -9,3 +9,4 @@ description.workspace = true
 license-file.workspace = true
 
 [dependencies]
+serialport = "4.10.1"

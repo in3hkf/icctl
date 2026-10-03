@@ -2,6 +2,34 @@
 /// livello di comandi e messaggi del protocollo CI-V.
 pub struct Bytes(pub(crate) Vec<u8>);
 
+/// RadioAddress è il byte identificativo di una radio Icom. Ogni radio ha un
+/// valore preimpostato che può essere cambiato mediante i menù della radio.
+pub struct RadioAddress(pub(crate) u8);
+
+/// ControllerAddress è il byte identificativo del controller (PC).
+/// Il controller ha un indirizzo di default pari a 0xE0.
+pub struct ControllerAddress(pub(crate) u8);
+
+/// Controller è il dispositivo che controlla la radio.
+pub struct Controller {
+    // Controller's address. Default value is E0.
+    addr: ControllerAddress,
+    // Radio controllata. E' un valore opzionale perchè il controller potrebbe
+    // non essere collegato a nessuna radio.
+    radio: Option<Radio>,
+    // transceive indica se il controller vuole ricevere le notifiche inviate
+    // dalla radio quando viene cambiata la frequenza o il modo sulla radio
+    // stessa.
+    transceive: bool,
+}
+
+/// Radio è una specifica radio Icom che verrà collegata da un controller che le
+/// invierà comandi.
+pub struct Radio {
+    // Radio's address.
+    addr: RadioAddress,
+}
+
 /// Command rappresenta un comando CI-V con il seguente formato:
 ///
 /// [Cn][Sc][Data area]
@@ -27,10 +55,6 @@ pub(crate) enum MessageKind {
     // Messaggio di NG dalla Radio al Controller
     NG(),
 }
-
-/// RadioAddress è il byte identificativo di una radio Icom. Ogni radio ha un
-/// valore preimpostato che può essere cambiato mediante i menù della radio.
-pub struct RadioAddress(pub(crate) u8);
 
 /// Message è un messaggio di protocollo CI-V scambiato tra i due nodi
 /// terminali: una radio Icom e il controller. Esistono, fondamentalmente,
