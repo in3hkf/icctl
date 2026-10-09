@@ -1,33 +1,49 @@
+use serialport::SerialPort;
+
 /// Bytes è una sequenza di byte che forniscono una rappresenzazione di basso
 /// livello di comandi e messaggi del protocollo CI-V.
 pub struct Bytes(pub(crate) Vec<u8>);
 
-/// RadioAddress è il byte identificativo di una radio Icom. Ogni radio ha un
-/// valore preimpostato che può essere cambiato mediante i menù della radio.
-pub struct RadioAddress(pub(crate) u8);
+/// Address è il byte identificativo di una radio Icom o del Controller.
+/// Ogni radio ha un valore preimpostato che può essere cambiato mediante i menù
+/// della radio.
+pub struct Address(pub(crate) u8);
 
-/// ControllerAddress è il byte identificativo del controller (PC).
-/// Il controller ha un indirizzo di default pari a 0xE0.
-pub struct ControllerAddress(pub(crate) u8);
+/// TransceiverId è il valore identificativo dello specifico modello di radio Icom.
+/// Tale valore, non modificabile dai menù della radio, è quello restituito dal
+/// comando CI-V 19 00.
+pub struct TransceiverId(pub(crate) u8);
 
-/// Controller è il dispositivo che controlla la radio.
-pub struct Controller {
-    // Controller's address. Default value is E0.
-    addr: ControllerAddress,
-    // Radio controllata. E' un valore opzionale perchè il controller potrebbe
-    // non essere collegato a nessuna radio.
-    radio: Option<Radio>,
-    // transceive indica se il controller vuole ricevere le notifiche inviate
-    // dalla radio quando viene cambiata la frequenza o il modo sulla radio
-    // stessa.
-    transceive: bool,
+pub trait Model {
+    fn name(&self) -> &'static str;
+    fn transceiver_id(&self) -> &'static TransceiverId;
+    fn default_address(&self) -> &'static Address;
 }
 
-/// Radio è una specifica radio Icom che verrà collegata da un controller che le
-/// invierà comandi.
-pub struct Radio {
-    // Radio's address.
-    addr: RadioAddress,
+/// Link rappresenta gli estremi del collegamento tra la radio Icom e il suo
+/// controller. Il collegamento avviene tramite seriale.
+pub struct Link {
+    // path è il path assoluto del dispositivo seriale esposto dalla radio.
+    path: String,
+    // radio_address è l'indirizzo CI-V al quale risponde la radio collegata da
+    // tale link.
+    radio_address: Address,
+    // ctrl_address è l'indirizzo del controller che gestisce tale link.
+    ctrl_address: Address,
+    // connection è l'effettiva connessione seriale attraverso la quale radio e
+    // controller dialogano.
+    connection: Option<Box<dyn SerialPort>>,
+}
+
+/// Radio è una radio Icom di modello Model.
+/// Scopo di Radio è quello di attivare un collegamento seriale con il modello
+/// di radio Icom Model alla quale invierà comandi.
+pub struct Radio<M: Model> {
+    // model è il modello specifico di radio Icom che si desidera interfacciare.
+    model: M,
+    // link è il collegamento, e i suoi estremi, che permette il dialogo tra il
+    // controller e la radio reale.
+    link: Link,
 }
 
 /// Command rappresenta un comando CI-V con il seguente formato:
@@ -40,6 +56,8 @@ pub struct Radio {
 ///  - Data area contiene gli argomenti del comando. E' presente in alcuni
 ///    comandi.
 pub trait Command {
+    type M: Model;
+
     fn payload(&self) -> Bytes;
 }
 
@@ -68,14 +86,14 @@ pub(crate) enum MessageKind {
 ///  - Messaggio NG dalla radio al controller:
 ///      [FE][FE][E0][Radio-Address][FA][FD]
 pub struct Message {
-    radio_address: RadioAddress,
+    radio_address: Address,
     kind: MessageKind,
 }
 
 /// MessageBuilder permette di costruire un messaggio con un comando da inviare
 /// alla radio con indirizzo *radio_address*.
 pub struct MessageBuilder {
-    radio_address: RadioAddress,
+    radio_address: Address,
 }
 
 impl MessageBuilder {
@@ -95,7 +113,7 @@ impl Message {
     /// to_radio permette di costruire un messaggio che il controller invierà
     /// alla radio con indirizzo *radio_address*. Tale funzione restituisce un
     /// builder di Message.
-    pub fn to_radio(radio_address: RadioAddress) -> MessageBuilder {
+    pub fn to_radio(radio_address: Address) -> MessageBuilder {
         MessageBuilder { radio_address }
     }
 
