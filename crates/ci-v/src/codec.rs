@@ -11,10 +11,10 @@ pub enum Error {
     TargetSpace { expected: usize, found: usize },
 }
 
-pub struct Codec;
+pub struct Encoder;
 
-impl Codec {
-    pub fn encode(&self, frame: &Frame, target: &mut [u8]) -> Result<usize, Error> {
+impl Encoder {
+    pub fn encode(frame: &Frame, target: &mut [u8]) -> Result<usize, Error> {
         // Il messaggio CI-V è formato da:
         // [FE][FE][Dst][Src][Cn][Sc][Data Area][FD]
         // Frame rappresenta la parte da Dst a Data Area, quindi la dimensione
@@ -58,8 +58,7 @@ mod tests {
             load: &[],
         };
         let mut buf = [0u8; 16];
-        let codec = Codec {};
-        let n = codec.encode(&f, &mut buf).unwrap();
+        let n = Encoder::encode(&f, &mut buf).unwrap();
         assert_eq!(&buf[..n], &[0xFE, 0xFE, 0xA4, 0xE0, 0x03, 0xFD]);
     }
 
@@ -72,9 +71,8 @@ mod tests {
             load: &[0x01, 0x02],
         };
         let mut buf = [0u8; 4];
-        let codec = Codec {};
         assert_eq!(
-            codec.encode(&f, &mut buf),
+            Encoder::encode(&f, &mut buf),
             Err(Error::TargetSpace {
                 expected: 8,
                 found: 4
