@@ -10,3 +10,4 @@ license-file.workspace = true
 
 [dependencies]
 serialport = "4.10.1"
+thiserror = "2.0.21"
