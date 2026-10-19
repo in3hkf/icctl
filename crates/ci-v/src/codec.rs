@@ -14,7 +14,7 @@ pub enum Error {
 pub struct Encoder;
 
 impl Encoder {
-    pub fn encode(frame: &Frame, target: &mut [u8]) -> Result<usize, Error> {
+    pub fn encode<const N: usize>(frame: &Frame<N>, target: &mut [u8]) -> Result<usize, Error> {
         // Il messaggio CI-V è formato da:
         // [FE][FE][Dst][Src][Cn][Sc][Data Area][FD]
         // Frame rappresenta la parte da Dst a Data Area, quindi la dimensione
@@ -38,15 +38,16 @@ impl Encoder {
         let (load, terminator) = rest.split_last_chunk_mut::<1>().ok_or(target_space_error)?;
 
         *preamble2cmd = [PREAMBLE, PREAMBLE, frame.dst, frame.src, frame.cmd];
-        load.copy_from_slice(frame.load);
+        load.copy_from_slice(&frame.load[..frame.load_len]);
         *terminator = [TERMINATOR];
 
         Ok(total_len)
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum State {
+    #[default]
     Idle,
     Preamble,
     Dst,
@@ -69,25 +70,14 @@ pub enum DecodeError {
     Overflow,
 }
 
-pub struct Decoder<const N: usize> {
+#[derive(Debug, Default)]
+pub struct Decoder {
     state: State,
-    dst: u8,
-    src: u8,
-    cmd: u8,
-    buf: [u8; N],
-    len: usize,
 }
 
-impl<const N: usize> Decoder<N> {
+impl Decoder {
     pub const fn new() -> Self {
-        Self {
-            state: State::Idle,
-            dst: 0,
-            src: 0,
-            cmd: 0,
-            buf: [0; N],
-            len: 0,
-        }
+        Self { state: State::Idle }
     }
 
     /// `feed` alimenta il Decoder con il successivo byte ricevuto dallo stream
@@ -96,7 +86,11 @@ impl<const N: usize> Decoder<N> {
     /// aggiornato lo stato. Tale stato viene restituito dalla funzione stessa.
     /// Nel caso il decoder abbia a disposizione un Frame completo il suo stato
     /// viene impostato a Complete.
-    pub fn feed(&mut self, b: u8) -> Result<State, DecodeError> {
+    pub fn decode<const N: usize>(
+        &mut self,
+        b: u8,
+        frame: &mut Frame<N>,
+    ) -> Result<State, DecodeError> {
         use State::*;
         // dopo un frame completo, Decoder reimposta lo stato a Idle.
         if self.state == Complete {
@@ -118,26 +112,26 @@ impl<const N: usize> Decoder<N> {
                 return Err(DecodeError::Truncated);
             }
             (Dst, _) => {
-                self.dst = b;
+                frame.dst = b;
                 self.state = Src;
             }
             (Src, _) => {
-                self.src = b;
+                frame.src = b;
                 self.state = Cmd;
             }
             (Cmd, _) => {
-                self.cmd = b;
-                self.len = 0;
+                frame.cmd = b;
+                frame.load_len = 0;
                 self.state = Load;
             }
             (Load, TERMINATOR) => {
                 self.state = Complete;
                 return Ok(Complete);
             }
-            (Load, _) => match self.buf.get_mut(self.len) {
+            (Load, _) => match frame.load.get_mut(frame.load_len) {
                 Some(slot) => {
                     *slot = b;
-                    self.len += 1;
+                    frame.load_len += 1;
                 }
                 None => {
                     self.state = Idle;
@@ -147,20 +141,6 @@ impl<const N: usize> Decoder<N> {
             (Complete, _) => {} // già gestito sopra
         }
         Ok(self.state)
-    }
-
-    /// `frame` ritorna Some(Frame) solo subito dopo `feed() == Complete`.
-    pub fn frame(&self) -> Option<Frame<'_>> {
-        if self.state != State::Complete {
-            return None;
-        }
-        let load = self.buf.get(..self.len)?;
-        Some(Frame {
-            dst: self.dst,
-            src: self.src,
-            cmd: self.cmd,
-            load,
-        })
     }
 }
 
@@ -174,7 +154,8 @@ mod tests {
             dst: 0xA4,
             src: 0xE0,
             cmd: 0x03,
-            load: &[],
+            load: [0; 16],
+            load_len: 0,
         };
         let mut buf = [0u8; 16];
         let n = Encoder::encode(&f, &mut buf).unwrap();
@@ -187,7 +168,8 @@ mod tests {
             dst: 0xA4,
             src: 0xE0,
             cmd: 0x03,
-            load: &[0x01, 0x02],
+            load: [0x01, 0x02],
+            load_len: 2,
         };
         let mut buf = [0u8; 4];
         assert_eq!(
@@ -201,21 +183,21 @@ mod tests {
 
     #[test]
     fn byte_by_byte_with_noise() {
-        let mut d = Decoder::<16>::new();
+        let mut d = Decoder::new();
         let bytes = [
             0x00, 0xFE, 0x01, 0xFE, 0xFE, 0xA4, 0xE0, 0x03, 0x01, 0x02, 0xFD,
         ];
         let mut complete_at = None;
+        let mut frame = Frame::default();
         for (i, &b) in bytes.iter().enumerate() {
-            if d.feed(b).unwrap() == State::Complete {
+            if d.decode(b, &mut frame).unwrap() == State::Complete {
                 complete_at = Some(i);
             }
         }
         assert_eq!(complete_at, Some(bytes.len() - 1));
-        let f = d.frame().unwrap();
         assert_eq!(
-            (f.dst, f.src, f.cmd, f.load),
-            (0xA4, 0xE0, 0x03, &[0x01, 0x02][..])
+            (frame.dst, frame.src, frame.cmd, frame.load),
+            (0xA4, 0xE0, 0x03, [0x01, 0x02])
         );
     }
 }
