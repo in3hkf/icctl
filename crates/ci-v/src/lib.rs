@@ -7,5 +7,8 @@ extern crate alloc;
 extern crate std;
 
 mod codec;
+pub mod driver;
 mod link;
 mod types;
+
+pub use types::Address;

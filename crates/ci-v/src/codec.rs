@@ -2,10 +2,10 @@ use thiserror::Error;
 
 use crate::link::Frame;
 
-const PREAMBLE: u8 = 0xFE;
-const TERMINATOR: u8 = 0xFD;
+const PREAMBLE_CODE: u8 = 0xFE;
+const EOM_CODE: u8 = 0xFD;
 
-#[derive(Error, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error {
     #[error("Target Space insufficient (expected {expected:?}, found {found:?})")]
     TargetSpace { expected: usize, found: usize },
@@ -37,9 +37,15 @@ impl Encoder {
         // load è composto da [Sc][Data Area]
         let (load, terminator) = rest.split_last_chunk_mut::<1>().ok_or(target_space_error)?;
 
-        *preamble2cmd = [PREAMBLE, PREAMBLE, frame.dst, frame.src, frame.cmd];
+        *preamble2cmd = [
+            PREAMBLE_CODE,
+            PREAMBLE_CODE,
+            frame.dst,
+            frame.src,
+            frame.cmd,
+        ];
         load.copy_from_slice(&frame.load[..frame.load_len]);
-        *terminator = [TERMINATOR];
+        *terminator = [EOM_CODE];
 
         Ok(total_len)
     }
@@ -57,7 +63,7 @@ pub enum State {
     Complete,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Error)]
 pub enum DecodeError {
     #[error("frame too short")]
     // FD prima di cmd
@@ -97,16 +103,16 @@ impl Decoder {
             self.state = Idle;
         }
         match (self.state, b) {
-            (Idle, PREAMBLE) => self.state = Preamble,
+            (Idle, PREAMBLE_CODE) => self.state = Preamble,
             (Idle, _) => {}
-            (Preamble, PREAMBLE) => self.state = Dst,
+            (Preamble, PREAMBLE_CODE) => self.state = Dst,
             (Preamble, _) => self.state = Idle,
-            (Dst, PREAMBLE) => {} // preambolo esteso (più di due FE)
-            (Dst | Src | Cmd, TERMINATOR) => {
+            (Dst, PREAMBLE_CODE) => {} // preambolo esteso (più di due FE)
+            (Dst | Src | Cmd, EOM_CODE) => {
                 self.state = Idle;
                 return Err(DecodeError::TooShort);
             }
-            (Src | Cmd | Load, PREAMBLE) => {
+            (Src | Cmd | Load, PREAMBLE_CODE) => {
                 // l'FE appena visto è già il primo del preambolo successivo
                 self.state = Preamble;
                 return Err(DecodeError::Truncated);
@@ -124,7 +130,7 @@ impl Decoder {
                 frame.load_len = 0;
                 self.state = Load;
             }
-            (Load, TERMINATOR) => {
+            (Load, EOM_CODE) => {
                 self.state = Complete;
                 return Ok(Complete);
             }

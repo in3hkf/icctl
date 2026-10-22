@@ -1,9 +1,9 @@
-use crate::codec::{DecodeError, Decoder, State};
+use crate::codec::{self, DecodeError, Decoder, Encoder, State};
 
-use embedded_io::Read;
+use embedded_io::{Read, Write};
 use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frame<const N: usize> {
     pub(crate) dst: u8,
     pub(crate) src: u8,
@@ -30,7 +30,7 @@ impl<const N: usize> Frame<N> {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error<E> {
     #[error("I/O error: {0:?}")]
     Io(E),
@@ -38,6 +38,8 @@ pub enum Error<E> {
     Eof,
     #[error(transparent)]
     Decode(#[from] DecodeError),
+    #[error(transparent)]
+    Encode(#[from] codec::Error),
     #[error("internal error: decoder invariant violated")]
     Internal,
 }
@@ -66,6 +68,7 @@ impl<const N: usize> Controller<N> {
         input: &mut R,
         frame: &mut Frame<M>,
     ) -> Result<(), Error<R::Error>> {
+        // Buffer:
         // [0,1,2,...,N-3,N-2,N-1]
         //      ^     ^
         //      s     e
@@ -96,5 +99,170 @@ impl<const N: usize> Controller<N> {
             // se read ha letto e byte allora s è 0: read inserisce a sinistra.
             self.s = 0;
         }
+    }
+
+    pub fn send_frame<const M: usize, W: Write>(
+        &self,
+        stream: &mut W,
+        frame: &Frame<M>,
+    ) -> Result<usize, Error<W::Error>> {
+        let mut buf = [0u8; M];
+        let n = Encoder::encode(&frame, &mut buf)?;
+        stream.write(&buf[..n]).map_err(Error::Io)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn receive_simple_frame() {
+        let io_stream = [0x32, 0x43, 0xFE, 0xFE, 0xA4, 0xE0, 0x07, 0x00, 0xFD];
+        let load: [u8; 8] = [0; 8];
+        let expected_frame = Frame {
+            dst: 0xA4,
+            src: 0xE0,
+            cmd: 0x07,
+            load,
+            load_len: 1,
+        };
+        let mut frame: Frame<8> = Frame::default();
+        let mut controller: Controller<16> = Controller::default();
+        controller
+            .receive_frame(&mut io_stream.as_slice(), &mut frame)
+            .unwrap();
+        assert_eq!(frame, expected_frame);
+    }
+
+    #[test]
+    fn receive_simple_frame_small_buffer() {
+        let io_stream = [0x32, 0x43, 0xFE, 0xFE, 0xA4, 0xE0, 0x07, 0x00, 0xFD];
+        let load: [u8; 8] = [0; 8];
+        let expected_frame = Frame {
+            dst: 0xA4,
+            src: 0xE0,
+            cmd: 0x07,
+            load,
+            load_len: 1,
+        };
+        let mut frame: Frame<8> = Frame::default();
+        let mut controller: Controller<4> = Controller::default();
+        controller
+            .receive_frame(&mut io_stream.as_slice(), &mut frame)
+            .unwrap();
+        assert_eq!(frame, expected_frame);
+    }
+
+    #[test]
+    fn receive_double_simple_frame() {
+        let io_stream = [
+            0x32, 0x43, 0xFE, 0xFE, 0xA4, 0xE0, 0x07, 0x00, 0xFD, 0xFE, 0xFE, 0xE0, 0xA4, 0xFB,
+            0xFD,
+        ];
+        let load: [u8; 8] = [0; 8];
+        let expected_frame1 = Frame {
+            dst: 0xA4,
+            src: 0xE0,
+            cmd: 0x07,
+            load,
+            load_len: 1,
+        };
+        let expected_frame2 = Frame {
+            dst: 0xE0,
+            src: 0xA4,
+            cmd: 0xFB,
+            load,
+            load_len: 0,
+        };
+        let mut frame: Frame<8> = Frame::default();
+        let mut controller: Controller<16> = Controller::default();
+        controller
+            .receive_frame(&mut io_stream.as_slice(), &mut frame)
+            .unwrap();
+        assert_eq!(frame, expected_frame1);
+        controller
+            .receive_frame(&mut io_stream.as_slice(), &mut frame)
+            .unwrap();
+        assert_eq!(frame, expected_frame2);
+    }
+
+    #[test]
+    fn receive_simple_frame_long_preamble() {
+        let io_stream = [
+            0x32, 0x43, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
+            0xFE, 0xFE, 0xA4, 0xE0, 0x07, 0x00, 0xFD,
+        ];
+        let load: [u8; 8] = [0; 8];
+        let expected_frame = Frame {
+            dst: 0xA4,
+            src: 0xE0,
+            cmd: 0x07,
+            load,
+            load_len: 1,
+        };
+        let mut frame: Frame<8> = Frame::default();
+        let mut controller: Controller<16> = Controller::default();
+        controller
+            .receive_frame(&mut io_stream.as_slice(), &mut frame)
+            .unwrap();
+        assert_eq!(frame, expected_frame);
+    }
+
+    #[test]
+    fn receive_simple_frame_eof() {
+        let io_stream = [0x32, 0x43, 0xFE, 0xFE, 0xA4, 0xE0, 0x07, 0x00];
+        let mut frame: Frame<8> = Frame::default();
+        let mut controller: Controller<16> = Controller::default();
+        assert_eq!(
+            controller.receive_frame(&mut io_stream.as_slice(), &mut frame),
+            Err(Error::Eof)
+        );
+    }
+
+    #[test]
+    fn send_ng_message() {
+        let frame = Frame {
+            dst: 0xE0,
+            src: 0xA4,
+            cmd: 0xFA,
+            load: [0; 8],
+            load_len: 0,
+        };
+        let expected_stream: [u8; 8] = [0xFE, 0xFE, 0xE0, 0xA4, 0xFA, 0xFD, 0x00, 0x00];
+        let mut stream: [u8; 8] = [0; 8];
+
+        let controller: Controller<16> = Controller::default();
+        let n = controller
+            .send_frame(&mut stream.as_mut_slice(), &frame)
+            .unwrap();
+        assert_eq!(n, 6);
+        assert_eq!(stream, expected_stream);
+    }
+
+    #[test]
+    fn send_simple_frame() {
+        // IC-705 CI-V Ref p17 Operating frequency
+        // 145.225 MHz
+        let load: [u8; 16] = [0, 0, 5, 0, 2, 2, 4, 5, 0, 1, 0, 0, 0, 0, 0, 0];
+        let frame = Frame {
+            dst: 0xA4,
+            src: 0xE0,
+            cmd: 0x05,
+            load,
+            load_len: 10,
+        };
+        let expected_stream: [u8; 16] = [
+            0xFE, 0xFE, 0xA4, 0xE0, 0x05, 0x00, 0x00, 0x05, 0x00, 0x02, 0x02, 0x04, 0x05, 0x00,
+            0x01, 0xFD,
+        ];
+        let mut stream: [u8; 16] = [0; 16];
+
+        let controller: Controller<16> = Controller::default();
+        let n = controller
+            .send_frame(&mut stream.as_mut_slice(), &frame)
+            .unwrap();
+        assert_eq!(n, 16);
+        assert_eq!(stream, expected_stream);
     }
 }
