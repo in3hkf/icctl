@@ -9,6 +9,15 @@ const EOM_CODE: u8 = 0xFD;
 pub enum Error {
     #[error("Target Space insufficient (expected {expected:?}, found {found:?})")]
     TargetSpace { expected: usize, found: usize },
+    #[error("frame too short")]
+    // FD prima di cmd
+    TooShort,
+    #[error("truncated frame")]
+    // FE dentro il frame: il precedente è interrotto
+    Truncated,
+    #[error("load exceeds decoder buffer")]
+    // load più grande del buffer
+    Overflow,
 }
 
 pub struct Encoder;
@@ -16,8 +25,8 @@ pub struct Encoder;
 impl Encoder {
     pub fn encode<const N: usize>(frame: &Frame<N>, target: &mut [u8]) -> Result<usize, Error> {
         // Il messaggio CI-V è formato da:
-        // [FE][FE][Dst][Src][Cn][Sc][Data Area][FD]
-        // Frame rappresenta la parte da Dst a Data Area, quindi la dimensione
+        // [FE][FE][Da][Sa][Cn][Sc][Data Area][FD]
+        // Frame rappresenta la parte da Da a Data Area, quindi la dimensione
         // totale del messaggio è data dalla dimensione di Frame più i tre byte
         // del preambolo, FE FE, e il byte terminatore FD.
         let total_len = frame.len() + 3;
@@ -31,20 +40,14 @@ impl Encoder {
 
         // Verifico che target abbia lunghezza almeno di `total_len` byte.
         let msg = target.get_mut(..total_len).ok_or(target_space_error)?;
-        // preamble2cmd è composto dai due byte di preamble (FE), da [Dst], [Src] e
-        // [Cn]: quindi dal preamble al cmd (Cn).
-        let (preamble2cmd, rest) = msg.split_first_chunk_mut::<5>().ok_or(target_space_error)?;
-        // load è composto da [Sc][Data Area]
-        let (load, terminator) = rest.split_last_chunk_mut::<1>().ok_or(target_space_error)?;
+        // preambleadds è composto dai due byte di preamble (FE), da [Da] e [Sa]:
+        // quindi da preamble più indirizzi.
+        let (preambleadds, rest) = msg.split_first_chunk_mut::<4>().ok_or(target_space_error)?;
+        // load è composto da [Cn][Sc][Data Area]
+        let (payload, terminator) = rest.split_last_chunk_mut::<1>().ok_or(target_space_error)?;
 
-        *preamble2cmd = [
-            PREAMBLE_CODE,
-            PREAMBLE_CODE,
-            frame.dst,
-            frame.src,
-            frame.cmd,
-        ];
-        load.copy_from_slice(&frame.load[..frame.load_len]);
+        *preambleadds = [PREAMBLE_CODE, PREAMBLE_CODE, frame.da, frame.sa];
+        payload.copy_from_slice(&frame.payload[..frame.payload_len]);
         *terminator = [EOM_CODE];
 
         Ok(total_len)
@@ -56,24 +59,10 @@ pub enum State {
     #[default]
     Idle,
     Preamble,
-    Dst,
-    Src,
-    Cmd,
-    Load,
+    Da,
+    Sa,
+    Payoad,
     Complete,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Error)]
-pub enum DecodeError {
-    #[error("frame too short")]
-    // FD prima di cmd
-    TooShort,
-    #[error("truncated frame")]
-    // FE dentro il frame: il precedente è interrotto
-    Truncated,
-    #[error("load exceeds decoder buffer")]
-    // load più grande del buffer
-    Overflow,
 }
 
 #[derive(Debug, Default)]
@@ -86,17 +75,13 @@ impl Decoder {
         Self { state: State::Idle }
     }
 
-    /// `feed` alimenta il Decoder con il successivo byte ricevuto dallo stream
+    /// `decode` alimenta il Decoder con il successivo byte ricevuto dallo stream
     /// di ingresso. Tale byte viene interpretato in funzione dello stato
     /// interno della macchina a stati del decoder e viene, eventualmente,
     /// aggiornato lo stato. Tale stato viene restituito dalla funzione stessa.
     /// Nel caso il decoder abbia a disposizione un Frame completo il suo stato
     /// viene impostato a Complete.
-    pub fn decode<const N: usize>(
-        &mut self,
-        b: u8,
-        frame: &mut Frame<N>,
-    ) -> Result<State, DecodeError> {
+    pub fn decode<const N: usize>(&mut self, b: u8, frame: &mut Frame<N>) -> Result<State, Error> {
         use State::*;
         // dopo un frame completo, Decoder reimposta lo stato a Idle.
         if self.state == Complete {
@@ -105,43 +90,39 @@ impl Decoder {
         match (self.state, b) {
             (Idle, PREAMBLE_CODE) => self.state = Preamble,
             (Idle, _) => {}
-            (Preamble, PREAMBLE_CODE) => self.state = Dst,
+            (Preamble, PREAMBLE_CODE) => self.state = Da,
             (Preamble, _) => self.state = Idle,
-            (Dst, PREAMBLE_CODE) => {} // preambolo esteso (più di due FE)
-            (Dst | Src | Cmd, EOM_CODE) => {
+            (Da, PREAMBLE_CODE) => {} // preambolo esteso (più di due FE)
+            (Da | Sa, EOM_CODE) => {
                 self.state = Idle;
-                return Err(DecodeError::TooShort);
+                return Err(Error::TooShort);
             }
-            (Src | Cmd | Load, PREAMBLE_CODE) => {
+            (Sa | Payoad, PREAMBLE_CODE) => {
                 // l'FE appena visto è già il primo del preambolo successivo
                 self.state = Preamble;
-                return Err(DecodeError::Truncated);
+                return Err(Error::Truncated);
             }
-            (Dst, _) => {
-                frame.dst = b;
-                self.state = Src;
+            (Da, _) => {
+                frame.da = b;
+                self.state = Sa;
             }
-            (Src, _) => {
-                frame.src = b;
-                self.state = Cmd;
+            (Sa, _) => {
+                frame.sa = b;
+                frame.payload_len = 0;
+                self.state = Payoad;
             }
-            (Cmd, _) => {
-                frame.cmd = b;
-                frame.load_len = 0;
-                self.state = Load;
-            }
-            (Load, EOM_CODE) => {
+            (Payoad, EOM_CODE) => {
                 self.state = Complete;
                 return Ok(Complete);
             }
-            (Load, _) => match frame.load.get_mut(frame.load_len) {
+            (Payoad, _) => match frame.payload.get_mut(frame.payload_len) {
                 Some(slot) => {
                     *slot = b;
-                    frame.load_len += 1;
+                    frame.payload_len += 1;
                 }
                 None => {
                     self.state = Idle;
-                    return Err(DecodeError::Overflow);
+                    return Err(Error::Overflow);
                 }
             },
             (Complete, _) => {} // già gestito sopra
@@ -157,11 +138,10 @@ mod tests {
     #[test]
     fn encodes_read_frequency_request() {
         let f = Frame {
-            dst: 0xA4,
-            src: 0xE0,
-            cmd: 0x03,
-            load: [0; 16],
-            load_len: 0,
+            da: 0xA4,
+            sa: 0xE0,
+            payload: [0x03, 0x00, 0x00, 0x00],
+            payload_len: 1,
         };
         let mut buf = [0u8; 16];
         let n = Encoder::encode(&f, &mut buf).unwrap();
@@ -171,11 +151,10 @@ mod tests {
     #[test]
     fn rejects_small_buffer() {
         let f = Frame {
-            dst: 0xA4,
-            src: 0xE0,
-            cmd: 0x03,
-            load: [0x01, 0x02],
-            load_len: 2,
+            da: 0xA4,
+            sa: 0xE0,
+            payload: [0x03, 0x01, 0x02],
+            payload_len: 3,
         };
         let mut buf = [0u8; 4];
         assert_eq!(
@@ -202,8 +181,8 @@ mod tests {
         }
         assert_eq!(complete_at, Some(bytes.len() - 1));
         assert_eq!(
-            (frame.dst, frame.src, frame.cmd, frame.load),
-            (0xA4, 0xE0, 0x03, [0x01, 0x02])
+            (frame.da, frame.sa, frame.payload),
+            (0xA4, 0xE0, [0x03, 0x01, 0x02])
         );
     }
 }

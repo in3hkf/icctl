@@ -6,7 +6,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod codec;
+mod buffer;
+// mod codec;
 pub mod driver;
 mod link;
 mod types;
