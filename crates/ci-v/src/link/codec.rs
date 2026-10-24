@@ -83,6 +83,7 @@ impl Decoder {
     /// viene impostato a Complete.
     pub fn decode<const N: usize>(&mut self, b: u8, frame: &mut Frame<N>) -> Result<State, Error> {
         use State::*;
+
         // dopo un frame completo, Decoder reimposta lo stato a Idle.
         if self.state == Complete {
             self.state = Idle;
