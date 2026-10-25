@@ -10,7 +10,7 @@ pub trait Driver {
     type Endpoint;
     type Error;
 
-    fn connect(enpoint: Self::Endpoint) -> Result<Self, Self::Error>
+    fn connect(endpoint: Self::Endpoint) -> Result<Self, Self::Error>
     where
         Self: Sized;
 

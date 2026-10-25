@@ -1,3 +1,5 @@
+use core::fmt::{Display, write};
+
 use crate::{
     Address,
     buffer::Buffer,
@@ -28,10 +30,51 @@ mod codec;
 /// | EOM      | 1 Byte     | End Of Message: un byte FD |
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frame<const N: usize> {
-    pub(crate) da: u8,
-    pub(crate) sa: u8,
-    pub(crate) payload: [u8; N],
-    pub(crate) payload_len: usize,
+    pub da: u8,
+    pub sa: u8,
+    pub payload: [u8; N],
+    pub payload_len: usize,
+}
+
+impl<const N: usize> Display for Frame<N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "--- Frame --------------------")?;
+        match self.sa {
+            0xE0 => writeln!(f, "Request"),
+            _ if self.da == 0xE0 => writeln!(f, "Response"),
+            _ => writeln!(f, "Req or Res"),
+        }?;
+        writeln!(f, "   {:X} -> {:X}", self.sa, self.da)?;
+        writeln!(f, "   Payload [{} bytes]", self.payload_len)?;
+        match self.payload_len {
+            0 => write!(f, "   No Cn?!"),
+            1 => match self.payload[0] {
+                0xFA => writeln!(f, "   FA -> NG"),
+                0xFB => writeln!(f, "   FB -> OK"),
+                n @ _ => writeln!(f, "   Cn: {n:X}"),
+            },
+            2 => writeln!(
+                f,
+                "   Cn: {:X}\n   Data: [{:X}]",
+                self.payload[0], self.payload[1]
+            ),
+            3 => writeln!(
+                f,
+                "      Cn: {:X}\n   Data: [{:X}, {:X}]",
+                self.payload[0], self.payload[1], self.payload[2]
+            ),
+            n @ _ => {
+                writeln!(f, "        Cn: {:X}", self.payload[0])?;
+                write!(f, "      Data: [")?;
+                for b in self.payload[1..self.payload_len - 2].iter() {
+                    write!(f, "{b:X}, ")?;
+                }
+                writeln!(f, "{:X}]", self.payload[self.payload_len - 1])
+            }
+        }?;
+
+        write!(f, "------------------------------")
+    }
 }
 
 impl<const N: usize> Default for Frame<N> {
@@ -69,12 +112,31 @@ pub enum Error<D: Driver> {
 
 pub struct Controller<D: Driver, const N: usize = 128> {
     driver: D,
+    // radio, controller e echo_back non vengono usati in controller.
+    // L'interfaccia prevede di usare Frame che ha i campi Da e Sa che con i
+    // campi radio e controller potrebbero permettere un controllo di flusso
+    // a livello di data link. Valutare la possibile estensione di Controller
+    // in tal senso... TODO!
     radio: Address,
     controller: Address,
     echo_back: bool,
     rx_buffer: Buffer<N>,
     tx_buffer: Buffer<N>,
     decoder: Decoder,
+}
+
+impl<D: Driver, const M: usize> Controller<D, M> {
+    pub fn with(driver: D) -> Self {
+        Self {
+            driver,
+            radio: Address(0xA4),
+            controller: Address(0xE0),
+            echo_back: false,
+            rx_buffer: Buffer::default(),
+            tx_buffer: Buffer::default(),
+            decoder: Decoder::default(),
+        }
+    }
 }
 
 impl<D: Driver, const M: usize> Controller<D, M> {
