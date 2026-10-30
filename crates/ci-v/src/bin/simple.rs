@@ -41,6 +41,15 @@ pub fn main() -> core::result::Result<(), String> {
     //     payload_len: 3,
     // };
 
+    // IC-705 CI-V Transceiver ID - returns A4
+    // let payload: [u8; 4] = [0x19, 0, 0, 0];
+    // let frame = Frame {
+    //     da: 0xA4,
+    //     sa: 0xE0,
+    //     payload,
+    //     payload_len: 2,
+    // };
+
     println!("Sending frame: \n{frame}");
     println!("Sending frame: \n{frame}");
 

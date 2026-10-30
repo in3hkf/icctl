@@ -1,4 +1,4 @@
-use core::fmt::{Display, write};
+use core::fmt::Display;
 
 use crate::{
     Address,
