@@ -1,4 +1,4 @@
-use ci_v::{Controller, Frame, driver::Driver, drivers::usb::UsbPort};
+use ci_v::{Controller, Frame, Link, driver::Driver, drivers::usb::UsbPort};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 

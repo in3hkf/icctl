@@ -98,6 +98,17 @@ impl<const N: usize> Frame<N> {
     }
 }
 
+/// Link
+pub trait Link {
+    type Error;
+
+    /// receive_frame riceve un singolo Frame dal link stabilito con la radio.
+    fn receive_frame<const N: usize>(&mut self) -> Result<Frame<N>, Self::Error>;
+
+    /// send_frame invia sul link il Frame fornito come argomento.
+    fn send_frame<const N: usize>(&mut self, frame: &Frame<N>) -> Result<usize, Self::Error>;
+}
+
 #[derive(Debug, Error, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error<D: Driver> {
     #[error("Driver I/O error: {0:?}")]
@@ -139,8 +150,10 @@ impl<D: Driver, const M: usize> Controller<D, M> {
     }
 }
 
-impl<D: Driver, const M: usize> Controller<D, M> {
-    pub fn receive_frame<const N: usize>(&mut self) -> Result<Frame<N>, Error<D>> {
+impl<D: Driver, const M: usize> Link for Controller<D, M> {
+    type Error = Error<D>;
+
+    fn receive_frame<const N: usize>(&mut self) -> Result<Frame<N>, Error<D>> {
         let mut frame = Frame::default();
         loop {
             for b in &mut self.rx_buffer {
@@ -161,7 +174,7 @@ impl<D: Driver, const M: usize> Controller<D, M> {
         }
     }
 
-    pub fn send_frame<const N: usize>(&mut self, frame: &Frame<N>) -> Result<usize, Error<D>> {
+    fn send_frame<const N: usize>(&mut self, frame: &Frame<N>) -> Result<usize, Error<D>> {
         let n = Encoder::encode(&frame, self.tx_buffer.as_mut_slice())?;
         self.tx_buffer.set_indexes(0, n);
         self.tx_buffer
@@ -173,6 +186,7 @@ impl<D: Driver, const M: usize> Controller<D, M> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use embedded_io::{Error, ErrorType, Read, Write};
     use thiserror::Error;
 
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -184,10 +198,36 @@ mod tests {
         Write,
     }
 
+    impl Error for TestDriverError {
+        fn kind(&self) -> embedded_io::ErrorKind {
+            embedded_io::ErrorKind::Other
+        }
+    }
+
+    impl<const N: usize> ErrorType for TestDriver<N> {
+        type Error = TestDriverError;
+    }
+
+    impl<const N: usize> Read for TestDriver<N> {
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+            let Ok(n) = self.0.read(buf);
+            Ok(n)
+        }
+    }
+
+    impl<const N: usize> Write for TestDriver<N> {
+        fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+            let Ok(n) = self.0.write(buf);
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
     impl<const N: usize> Driver for TestDriver<N> {
         type Endpoint = Option<[u8; N]>;
-
-        type Error = TestDriverError;
 
         fn connect(enpoint: Self::Endpoint) -> Result<Self, Self::Error>
         where
@@ -199,18 +239,6 @@ mod tests {
             };
 
             Ok(TestDriver(buffer))
-        }
-
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-            use embedded_io::Read;
-            let Ok(n) = self.0.read(buf);
-            Ok(n)
-        }
-
-        fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-            use embedded_io::Write;
-            let Ok(n) = self.0.write(buf);
-            Ok(n)
         }
     }
 
@@ -347,7 +375,7 @@ mod tests {
             tx_buffer: Buffer::default(),
             decoder: Decoder::default(),
         };
-        assert_eq!(controller.receive_frame::<8>(), Err(Error::Eof));
+        assert_eq!(controller.receive_frame::<8>(), Err(super::Error::Eof));
     }
 
     #[test]
