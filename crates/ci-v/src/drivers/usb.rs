@@ -1,11 +1,10 @@
 use std::println;
 
-use alloc::{boxed::Box, format, string::String};
+use alloc::{boxed::Box, format, string::String, vec::Vec};
+use ci_v_link::driver::Driver;
 use embedded_io::{ErrorType, Read, Write};
 use serialport::SerialPort;
 use thiserror::Error;
-
-use crate::driver::Driver;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -23,6 +22,43 @@ impl embedded_io::Error for Error {
     }
 }
 
+/// Frame è la PDU del livello Data Link la cui rappresentazione nel protocollo
+/// CI-V è la seguente:
+///
+/// ```text
+/// +----------+---------+-----+
+/// | PREAMBLE | PAYLOAD | EOM |
+/// +----------+---------+-----+
+/// 0          2        N+2  N+1
+/// ```
+///
+/// | Campo    | Dimensione | Descrizione                |
+/// |----------|------------|----------------------------|
+/// | PREAMBLE | 2 Byte     | Preambolo: due byte FE     |
+/// | PAYLOAD  | N Byte     | Payload: CI-V Cn+Sc+Data   |
+/// | EOM      | 1 Byte     | End Of Message: un byte FD |
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Frame {
+    pub payload: Vec<u8>,
+    pub payload_len: usize,
+}
+
+impl ci_v_link::driver::Frame for Frame {
+    fn with_payload<P: AsRef<[u8]>>(payload: P) -> Self {
+        let payload_ref = payload.as_ref();
+        let payload_len = payload_ref.len();
+
+        Frame {
+            payload: payload_ref.to_vec(),
+            payload_len,
+        }
+    }
+
+    fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+}
+
 #[derive(Debug)]
 pub struct UsbPort {
     endpoint: String,
@@ -36,9 +72,20 @@ impl UsbPort {
 }
 
 impl Driver for UsbPort {
-    type Endpoint = String;
+    type Error = Error;
+    type Frame = Frame;
 
-    fn connect(endpoint: Self::Endpoint) -> Result<Self, Self::Error>
+    fn receive_frame(&mut self) -> Result<Self::Frame, Self::Error> {
+        todo!()
+    }
+
+    fn send_frame(&mut self, frame: &Self::Frame) -> Result<usize, Self::Error> {
+        todo!()
+    }
+}
+
+impl UsbPort {
+    pub fn connect(endpoint: String) -> Result<Self, Error>
     where
         Self: Sized,
     {

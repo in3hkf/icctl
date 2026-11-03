@@ -1,5 +1,4 @@
-use crate::driver::Driver;
-
+use ci_v_link::driver::Driver;
 use core::convert::Infallible;
 use embedded_io::{BufRead, ErrorType, Read, Write};
 

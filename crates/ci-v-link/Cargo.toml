@@ -1,0 +1,11 @@
+[package]
+name = "ci-v-link"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+description.workspace = true
+license-file.workspace = true
+
+[dependencies]
+thiserror = { version = "2.0.21", default-features = false }

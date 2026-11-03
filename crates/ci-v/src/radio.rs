@@ -1,4 +1,6 @@
-use crate::{Address, Link, types::TransceiverId};
+use ci_v_link::driver::Driver;
+
+use crate::{Address, types::TransceiverId};
 
 /// Model permette di identificare in maniera univoca un modello specifico di
 /// radio Icom. Una radio Icom ha un valore univoco, ed unico specifico del
@@ -22,9 +24,9 @@ pub trait Model {
 }
 
 /// Radio
-pub struct Radio<M: Model, L: Link> {
+pub struct Radio<M: Model, D: Driver> {
     model: M,
-    link: L,
+    driver: D,
     radio_address: Option<Address>,
     controller_address: Address,
 }
