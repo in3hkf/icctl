@@ -36,3 +36,9 @@ impl Address {
 /// Tale valore, non modificabile dai menù della radio, è quello restituito dal
 /// comando CI-V 19 00.
 pub struct TransceiverId(pub(crate) u8);
+
+impl TransceiverId {
+    pub const fn get(&self) -> u8 {
+        self.0
+    }
+}

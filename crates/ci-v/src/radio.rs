@@ -1,4 +1,6 @@
-use ci_v_link::driver::Driver;
+use std::error;
+
+use ci_v_link::{driver::Driver, frame::Frame};
 use thiserror::Error;
 
 use crate::{Address, command::Command, types::TransceiverId};
@@ -27,7 +29,13 @@ pub trait Model {
 }
 
 #[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Error {}
+pub enum Error<D: Driver, C: Command> {
+    #[error("Driver error: $0")]
+    Driver(D::Error),
+
+    #[error("Command error: $0")]
+    Command(C::Error),
+}
 
 /// Radio
 pub struct Radio<M, D> {
@@ -112,7 +120,40 @@ impl<M: Model, D: Driver> Radio<M, D> {
     }
 
     /// exec invia alla Radio il comando
-    pub fn exec<C: Command<Model = M>>(&self, cmd: C) -> Result<C::Response, Error> {
-        todo!("exec command need an implementation");
+    pub fn exec<C: Command<Model = M>>(
+        &mut self,
+        cmd: C,
+    ) -> Result<C::Response, Error<D, C::Response>> {
+        let command = cmd.encode();
+        let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
+        payload.push(self.get_radio_address());
+        payload.push(self.get_controller_address());
+        payload.extend_from_slice(command);
+        let req_frame = <D as Driver>::Frame::with_payload(payload);
+
+        self.driver
+            .send_frame(&req_frame)
+            .map_err(|e| Error::Driver(e))?;
+
+        let res_frame = self.driver.receive_frame().map_err(|e| Error::Driver(e))?;
+
+        <C as Command>::Response::decode(res_frame.payload()).map_err(|e| Error::Command(e))
+    }
+}
+
+// Private implementation
+impl<M: Model, D: Driver> Radio<M, D> {
+    fn get_radio_address(&self) -> u8 {
+        match self.radio_address {
+            Some(ref addr) => addr.get(),
+            None => M::Transceiver_Id,
+        }
+    }
+
+    fn get_controller_address(&self) -> u8 {
+        match self.controller_address {
+            Some(ref addr) => addr.get(),
+            None => 0xE0,
+        }
     }
 }

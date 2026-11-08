@@ -1,9 +1,8 @@
+use std::error::Error;
+
 use thiserror::Error;
 
 use crate::radio::Model;
-
-#[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Error {}
 
 /// Command è uno dei possibili comandi del protocollo CI-V delle radio Icom.
 pub trait Command: Sized {
@@ -11,17 +10,21 @@ pub trait Command: Sized {
     /// implementato.
     type Model: Model;
 
-    /// Response definisce il tipo di risposta viene ottenuta dalla richiesta
+    /// Response definisce il tipo di risposta che viene ottenuta dalla richiesta
     /// di questo comando.
-    type Response;
+    type Response: Command;
+
+    /// Error specifico del comando
+    type Error: Error;
 
     /// Command number identifica un comando o un gruppo di comandi, ognuno dei
     /// quali vieni distinto usando un Sub command number `Sc`.
     #[allow(non_upper_case_globals)]
     const Cn: u8;
+
     /// Sub command number.
     #[allow(non_upper_case_globals)]
-    const Sc: u32;
+    const Sc: Option<u32>;
 
     /// N è la dimensione massima necessaria per serializzare tale comando in
     /// un buffer.
@@ -33,5 +36,11 @@ pub trait Command: Sized {
 
     /// decode esegue la decodifica da una sequenza di byte e, se non si verificano
     /// errori, restituisce un'istanza di tale comando.
-    fn decode(payload: &[u8]) -> Result<Self, Error>;
+    fn decode(payload: &[u8]) -> Result<Self, Self::Error>;
+}
+
+/// Ack è la risposta che molti comandi CI-V restituiscono
+pub enum Ack {
+    Ok,
+    Ng,
 }
