@@ -13,11 +13,11 @@ const EOM_CODE: u8 = 0xFD;
 /// 0          2        N+2  N+1
 /// ```
 ///
-/// | Campo    | Dimensione | Descrizione                |
-/// |----------|------------|----------------------------|
-/// | PREAMBLE | 2 Byte     | Preambolo: due byte FE     |
-/// | PAYLOAD  | N Byte     | Payload: CI-V Cn+Sc+Data   |
-/// | EOM      | 1 Byte     | End Of Message: un byte FD |
+/// | Campo    | Dimensione | Descrizione                      |
+/// |----------|------------|----------------------------------|
+/// | PREAMBLE | 2 Byte     | Preambolo: due byte FE           |
+/// | PAYLOAD  | N Byte     | Payload: CI-V Da+Sa+Cn+Sc+Data   |
+/// | EOM      | 1 Byte     | End Of Message: un byte FD       |
 ///
 /// Il trait Frame è l'interfaccia tra il Driver e lo strato superiore.
 pub trait Frame {
