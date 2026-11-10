@@ -1,11 +1,9 @@
-use std::error;
-
 use ci_v_link::{driver::Driver, frame::Frame};
 use thiserror::Error;
 
 use crate::{
     Address,
-    command::{Command, Response},
+    command::{Command, Requestor, Response},
     types::TransceiverId,
 };
 
@@ -154,12 +152,32 @@ impl<M: Model, D: Driver> Radio<M, D> {
     }
 }
 
-impl<M: Model, D: Driver> Radio<M, D> {
-    /// exec invia alla Radio il comando valido per ogni modello di radio.
-    pub fn exec<C: Command<Model = AllModels>>(
-        &mut self,
-        cmd: C,
-    ) -> Result<C::Response, Error<D, C>> {
+impl<M: Model, D: Driver, C: Command<Model = M>> Requestor<M, C> for Radio<M, D> {
+    type Error = Error<D, C>;
+
+    fn request(&mut self, cmd: C) -> Result<C::Response, Self::Error> {
+        let command = cmd.encode();
+        let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
+        payload.push(self.get_radio_address());
+        payload.push(self.get_controller_address());
+        payload.extend_from_slice(command);
+        let req_frame = D::Frame::with_payload(payload);
+        // let req_frame = <D as Driver>::Frame::with_payload(payload);
+
+        self.driver
+            .send_frame(&req_frame)
+            .map_err(|e| Error::Driver(e))?;
+
+        let res_frame = self.driver.receive_frame().map_err(|e| Error::Driver(e))?;
+
+        C::response(res_frame.payload()).map_err(|e| Error::Command(e))
+    }
+}
+
+impl<M: Model, D: Driver, C: Command<Model = AllModels>> Requestor<AllModels, C> for Radio<M, D> {
+    type Error = Error<D, C>;
+
+    fn request(&mut self, cmd: C) -> Result<C::Response, Self::Error> {
         let command = cmd.encode();
         let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
         payload.push(self.get_radio_address());

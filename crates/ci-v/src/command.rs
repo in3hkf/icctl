@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use thiserror::Error;
 
 use crate::radio::Model;
@@ -15,7 +13,7 @@ pub trait Response {
     type Response;
 
     /// Error che può accadere nella decodifica della risposta.
-    type Error: Error;
+    type Error: std::error::Error;
 
     /// response esegue la decodifica da una sequenza di byte e, se non si verificano
     /// errori, restituisce un'istanza di Response.
@@ -23,7 +21,7 @@ pub trait Response {
 }
 
 /// Command è uno dei possibili comandi del protocollo CI-V delle radio Icom.
-pub trait Command: Sized + Response {
+pub trait Command: Sized + Response + std::fmt::Debug {
     /// Model permette di definire per quale modello di radio tale comando è
     /// implementato.
     type Model: Model;
@@ -44,6 +42,21 @@ pub trait Command: Sized + Response {
     /// encode esegue la codifica del comando come sequenza di byte utile al invio,
     /// come richiesta alla radio, al driver.
     fn encode(&self) -> &[u8];
+}
+
+/// Requestor permette di inviare una richiesta di esecuzione di un comando CI-V
+/// ad una specifica radio con modello M. Il trait usa parametri generici invece
+/// che associated types, perchè esistono molti comandi che sono perfettamente
+/// validi su tutti i modelli di radio Icom. Ad esempio il comando `19 00` che
+/// legge il transceiver id.
+pub trait Requestor<M, C>
+where
+    M: Model,
+    C: Command<Model = M>,
+{
+    type Error: std::error::Error;
+
+    fn request(&mut self, cmd: C) -> Result<C::Response, Self::Error>;
 }
 
 /// Ack è la risposta che molti comandi CI-V restituiscono
