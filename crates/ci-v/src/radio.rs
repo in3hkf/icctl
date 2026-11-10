@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     Address,
-    command::{Command, Requestor, Response},
+    command::{Command, Response},
     types::TransceiverId,
 };
 
@@ -28,17 +28,6 @@ pub trait Model {
     fn is_this_model(transceiver_id: TransceiverId) -> bool {
         transceiver_id.0 == Self::Transceiver_Id
     }
-}
-
-// Permette di avere dei comandi che possano essere comuni a molti modelli di
-// radio.
-#[doc(hidden)]
-struct AllModels;
-
-impl Model for AllModels {
-    const Transceiver_Id: u8 = 0;
-
-    const Name: &'static str = "All Models";
 }
 
 #[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -133,58 +122,13 @@ impl<M: Model, D: Driver> Radio<M, D> {
     }
 
     /// exec invia alla Radio il comando
-    pub fn exec<C: Command<Model = M>>(&mut self, cmd: C) -> Result<C::Response, Error<D, C>> {
+    pub fn exec<C: Command<M>>(&mut self, mut cmd: C) -> Result<C::Response, Error<D, C>> {
         let command = cmd.encode();
         let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
         payload.push(self.get_radio_address());
         payload.push(self.get_controller_address());
         payload.extend_from_slice(command);
         let req_frame = D::Frame::with_payload(payload);
-        // let req_frame = <D as Driver>::Frame::with_payload(payload);
-
-        self.driver
-            .send_frame(&req_frame)
-            .map_err(|e| Error::Driver(e))?;
-
-        let res_frame = self.driver.receive_frame().map_err(|e| Error::Driver(e))?;
-
-        C::response(res_frame.payload()).map_err(|e| Error::Command(e))
-    }
-}
-
-impl<M: Model, D: Driver, C: Command<Model = M>> Requestor<M, C> for Radio<M, D> {
-    type Error = Error<D, C>;
-
-    fn request(&mut self, cmd: C) -> Result<C::Response, Self::Error> {
-        let command = cmd.encode();
-        let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
-        payload.push(self.get_radio_address());
-        payload.push(self.get_controller_address());
-        payload.extend_from_slice(command);
-        let req_frame = D::Frame::with_payload(payload);
-        // let req_frame = <D as Driver>::Frame::with_payload(payload);
-
-        self.driver
-            .send_frame(&req_frame)
-            .map_err(|e| Error::Driver(e))?;
-
-        let res_frame = self.driver.receive_frame().map_err(|e| Error::Driver(e))?;
-
-        C::response(res_frame.payload()).map_err(|e| Error::Command(e))
-    }
-}
-
-impl<M: Model, D: Driver, C: Command<Model = AllModels>> Requestor<AllModels, C> for Radio<M, D> {
-    type Error = Error<D, C>;
-
-    fn request(&mut self, cmd: C) -> Result<C::Response, Self::Error> {
-        let command = cmd.encode();
-        let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
-        payload.push(self.get_radio_address());
-        payload.push(self.get_controller_address());
-        payload.extend_from_slice(command);
-        let req_frame = D::Frame::with_payload(payload);
-        // let req_frame = <D as Driver>::Frame::with_payload(payload);
 
         self.driver
             .send_frame(&req_frame)

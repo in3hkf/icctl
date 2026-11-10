@@ -21,11 +21,9 @@ pub trait Response {
 }
 
 /// Command è uno dei possibili comandi del protocollo CI-V delle radio Icom.
-pub trait Command: Sized + Response + std::fmt::Debug {
-    /// Model permette di definire per quale modello di radio tale comando è
-    /// implementato.
-    type Model: Model;
-
+/// Model permette di definire per quale modello di radio tale comando è
+/// implementato.
+pub trait Command<M: Model>: Sized + Response + std::fmt::Debug {
     /// Command number identifica un comando o un gruppo di comandi, ognuno dei
     /// quali vieni distinto usando un Sub command number `Sc`.
     #[allow(non_upper_case_globals)]
@@ -41,22 +39,7 @@ pub trait Command: Sized + Response + std::fmt::Debug {
 
     /// encode esegue la codifica del comando come sequenza di byte utile al invio,
     /// come richiesta alla radio, al driver.
-    fn encode(&self) -> &[u8];
-}
-
-/// Requestor permette di inviare una richiesta di esecuzione di un comando CI-V
-/// ad una specifica radio con modello M. Il trait usa parametri generici invece
-/// che associated types, perchè esistono molti comandi che sono perfettamente
-/// validi su tutti i modelli di radio Icom. Ad esempio il comando `19 00` che
-/// legge il transceiver id.
-pub trait Requestor<M, C>
-where
-    M: Model,
-    C: Command<Model = M>,
-{
-    type Error: std::error::Error;
-
-    fn request(&mut self, cmd: C) -> Result<C::Response, Self::Error>;
+    fn encode(&mut self) -> &[u8];
 }
 
 /// Ack è la risposta che molti comandi CI-V restituiscono
