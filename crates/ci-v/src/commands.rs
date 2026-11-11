@@ -12,6 +12,10 @@ pub enum Error {
     Length(usize),
 }
 
+pub fn read_transceiver_id() -> ReadTransceiverID<Req> {
+    ReadTransceiverID(Req(Vec::new()))
+}
+
 #[derive(Debug)]
 pub struct ReadTransceiverID<T>(T);
 
@@ -35,6 +39,7 @@ impl<M: Model> Command<M> for ReadTransceiverID<Req> {
     }
 }
 
+#[derive(Debug)]
 pub struct Res(TransceiverId);
 
 impl Response for ReadTransceiverID<Req> {

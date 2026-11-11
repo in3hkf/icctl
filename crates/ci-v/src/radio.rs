@@ -47,8 +47,8 @@ pub struct Radio<M, D> {
     controller_address: Option<Address>,
 }
 
-struct NoModel;
-struct NoDriver;
+pub struct NoModel;
+pub struct NoDriver;
 
 impl Radio<NoModel, NoDriver> {
     pub fn with_model<M: Model>(model: M) -> Radio<M, NoDriver> {
@@ -155,4 +155,12 @@ impl<M: Model, D: Driver> Radio<M, D> {
             None => 0xE0,
         }
     }
+}
+
+pub struct Ic705;
+
+impl Model for Ic705 {
+    const Transceiver_Id: u8 = 0xA4;
+
+    const Name: &'static str = "IC-705";
 }

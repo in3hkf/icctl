@@ -35,6 +35,7 @@ impl Address {
 /// TransceiverId è il valore identificativo dello specifico modello di radio Icom.
 /// Tale valore, non modificabile dai menù della radio, è quello restituito dal
 /// comando CI-V 19 00.
+#[derive(Debug)]
 pub struct TransceiverId(pub(crate) u8);
 
 impl TransceiverId {
