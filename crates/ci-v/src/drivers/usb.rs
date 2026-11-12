@@ -1,5 +1,5 @@
 use std::{
-    io::{Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     println,
 };
 
@@ -63,15 +63,13 @@ impl ci_v_link::frame::Frame for Frame {
 #[derive(Debug)]
 pub struct UsbPort {
     endpoint: String,
-    port: Box<dyn SerialPort>,
     decoder: Decoder,
-    rx_buffer: Vec<u8>,
-    tx_buffer: Vec<u8>,
+    reader: BufReader<Box<dyn SerialPort>>,
 }
 
 impl UsbPort {
     pub fn name(&self) -> Option<String> {
-        self.port.name()
+        self.reader.get_ref().name()
     }
 }
 
@@ -80,33 +78,41 @@ impl Driver for UsbPort {
     type Frame = Frame;
 
     fn receive_frame(&mut self) -> Result<Self::Frame, Self::Error> {
-        let mut payload = Vec::with_capacity(1024); // TODO! >> Cambiare 1024 con const
+        let mut payload = Vec::with_capacity(Self::BUFSIZE);
+        let mut rx_buffer = Vec::with_capacity(Self::BUFSIZE);
 
         loop {
-            let mut m: usize = 0;
-            for b in self.rx_buffer.iter() {
-                m += 1;
-                if self.decoder.decode(*b, payload.as_mut_slice())? == State::Complete {
-                    self.rx_buffer.drain(..m);
-                    return Ok(Frame::with_payload(payload));
+            match self.reader.read_until(0xFD, &mut rx_buffer) {
+                Ok(n) => {
+                    // se read_until ritorna 0 significa che driver è arrivato ad EoF.
+                    if n == 0 {
+                        return Err(Error::Eof);
+                    }
+
+                    for b in rx_buffer.iter() {
+                        if self.decoder.decode(*b, payload.as_mut_slice())? == State::Complete {
+                            return Ok(Frame::with_payload(payload));
+                        }
+                    }
                 }
-            }
-
-            self.rx_buffer.drain(..m);
-            let mut buf = [0; 1024]; // TODO! >> Cambiare 1024 con const
-            let n = self.port.read(&mut buf)?;
-            self.rx_buffer.extend_from_slice(&buf[0..n]);
-
-            // se read ritorna 0 significa che driver è arrivato ad EoF.
-            if n == 0 {
-                return Err(Error::Eof);
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::TimedOut => {
+                        eprintln!("Timeout");
+                        continue;
+                    }
+                    err @ _ => {
+                        eprintln!("I/O Error: {err}");
+                        return Err(Error::from(e));
+                    }
+                },
             }
         }
     }
 
     fn send_frame(&mut self, frame: &Self::Frame) -> Result<usize, Self::Error> {
-        let n = Encoder::encode(frame, self.tx_buffer.as_mut_slice())?;
-        let m = self.port.write(&self.tx_buffer[0..n])?;
+        let mut tx_buffer = [0; 1024];
+        let n = Encoder::encode(frame, tx_buffer.as_mut_slice())?;
+        let m = self.reader.get_mut().write(&tx_buffer[0..n])?;
         Ok(m)
     }
 }
@@ -120,10 +126,8 @@ impl UsbPort {
         println!("Port: {:?}", port.name());
         Ok(UsbPort {
             endpoint,
-            port,
             decoder: Decoder::default(),
-            rx_buffer: Vec::new(),
-            tx_buffer: Vec::new(),
+            reader: BufReader::new(port),
         })
     }
 }

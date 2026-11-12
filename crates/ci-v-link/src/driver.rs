@@ -3,6 +3,7 @@ use crate::frame::Frame;
 /// Driver rappresenta lo strato fisico della connessione tra controller e
 /// radio e permette di inviare e ricevere trame `Frame`.
 pub trait Driver: core::fmt::Debug {
+    const BUFSIZE: usize = 1024;
     type Error: core::error::Error;
     type Frame: Frame;
 

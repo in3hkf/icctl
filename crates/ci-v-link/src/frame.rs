@@ -39,7 +39,7 @@ pub enum CodecError {
     #[error("truncated frame")]
     // FE dentro il frame: il precedente è interrotto
     Truncated,
-    #[error("load exceeds decoder buffer")]
+    #[error("payload exceeds decoder buffer")]
     // load più grande del buffer
     Overflow,
 }
@@ -142,5 +142,96 @@ impl Decoder {
             (Complete, _) => {} // già gestito sopra
         }
         Ok(self.state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct TestFrame {
+        payload: [u8; 64],
+        payload_len: usize,
+    }
+
+    impl Frame for TestFrame {
+        fn with_payload<P: AsRef<[u8]>>(payload: P) -> Self {
+            let p = payload.as_ref();
+            let mut buf = [0u8; 64];
+            buf[..p.len()].copy_from_slice(p); // panic se p.len() > 64
+            Self {
+                payload: buf,
+                payload_len: p.len(),
+            }
+        }
+
+        fn payload(&self) -> &[u8] {
+            &self.payload[..self.payload_len]
+        }
+    }
+
+    impl Default for TestFrame {
+        fn default() -> Self {
+            Self {
+                payload: [0; 64],
+                payload_len: Default::default(),
+            }
+        }
+    }
+
+    #[test]
+    fn encodes_read_frequency_request() {
+        let mut b = [0u8; 64];
+        b[0..3].copy_from_slice(&[0xA4, 0xE0, 0x03]);
+
+        let f = TestFrame {
+            payload: b,
+            payload_len: 3,
+        };
+
+        let mut buf = [0u8; 16];
+        let n = Encoder::encode(&f, &mut buf).unwrap();
+        assert_eq!(n, 6);
+        assert_eq!(&buf[..n], &[0xFE, 0xFE, 0xA4, 0xE0, 0x03, 0xFD]);
+    }
+
+    #[test]
+    fn rejects_small_buffer() {
+        let mut b = [0u8; 64];
+        b[0..6].copy_from_slice(&[0xA4, 0xE0, 0x03, 0x00, 0x00, 0x00]);
+
+        let f = TestFrame {
+            payload: b,
+            payload_len: 6,
+        };
+
+        let mut buf = [0u8; 4];
+        assert_eq!(
+            Encoder::encode(&f, &mut buf),
+            Err(CodecError::TargetSpace {
+                expected: 9,
+                found: 4
+            })
+        );
+    }
+
+    #[test]
+    fn byte_by_byte_with_noise() {
+        let mut d = Decoder::new();
+        let bytes = [
+            0x00, 0xFE, 0x01, 0xFE, 0xFE, 0xA4, 0xE0, 0x03, 0x01, 0x02, 0xFD,
+        ];
+        let mut complete_at = None;
+        let mut frame_payload = [0u8; 64];
+        for (i, &b) in bytes.iter().enumerate() {
+            if d.decode(b, &mut frame_payload).unwrap() == State::Complete {
+                complete_at = Some(i);
+            }
+        }
+        assert_eq!(complete_at, Some(bytes.len() - 1));
+        let expected = [0xA4, 0xE0, 0x03, 0x01, 0x02];
+        assert_eq!(&frame_payload[..expected.len()], &expected);
     }
 }

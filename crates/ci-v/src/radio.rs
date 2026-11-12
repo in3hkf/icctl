@@ -32,10 +32,10 @@ pub trait Model {
 
 #[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error<D: Driver, R: Response> {
-    #[error("Driver error: $0")]
+    #[error("Driver error: {0}")]
     Driver(D::Error),
 
-    #[error("Command error: $0")]
+    #[error("Command error: {0}")]
     Command(R::Error),
 }
 
