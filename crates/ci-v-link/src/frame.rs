@@ -39,9 +39,9 @@ pub enum CodecError {
     #[error("truncated frame")]
     // FE dentro il frame: il precedente è interrotto
     Truncated,
-    #[error("payload exceeds decoder buffer")]
+    #[error("payload exceeds decoder buffer [{0}]")]
     // load più grande del buffer
-    Overflow,
+    Overflow(usize),
 }
 
 pub struct Encoder;
@@ -83,7 +83,7 @@ pub enum State {
     Idle,
     Preamble,
     Payload(usize),
-    Complete,
+    Complete(usize),
 }
 
 #[derive(Debug, Default)]
@@ -107,9 +107,10 @@ impl Decoder {
         use State::*;
 
         // dopo un frame completo, Decoder reimposta lo stato a Idle.
-        if self.state == Complete {
+        if let Complete(_) = self.state {
             self.state = Idle;
-        }
+        };
+
         match (self.state, b) {
             (Idle, PREAMBLE_CODE) => self.state = Preamble,
             (Idle, _) => {}
@@ -125,9 +126,9 @@ impl Decoder {
                 self.state = Idle;
                 return Err(CodecError::TooShort);
             }
-            (Payload(_), EOM_CODE) => {
-                self.state = Complete;
-                return Ok(Complete);
+            (Payload(n), EOM_CODE) => {
+                self.state = Complete(n);
+                return Ok(Complete(n));
             }
             (Payload(n), _) => match frame_payload.get_mut(n) {
                 Some(slot) => {
@@ -136,10 +137,10 @@ impl Decoder {
                 }
                 None => {
                     self.state = Idle;
-                    return Err(CodecError::Overflow);
+                    return Err(CodecError::Overflow(n));
                 }
             },
-            (Complete, _) => {} // già gestito sopra
+            (Complete(_), _) => {} // già gestito sopra
         }
         Ok(self.state)
     }
@@ -226,7 +227,33 @@ mod tests {
         let mut complete_at = None;
         let mut frame_payload = [0u8; 64];
         for (i, &b) in bytes.iter().enumerate() {
-            if d.decode(b, &mut frame_payload).unwrap() == State::Complete {
+            if let State::Complete(n) = d.decode(b, &mut frame_payload).unwrap() {
+                complete_at = Some(i);
+            }
+        }
+        assert_eq!(complete_at, Some(bytes.len() - 1));
+        let expected = [0xA4, 0xE0, 0x03, 0x01, 0x02];
+        assert_eq!(&frame_payload[..expected.len()], &expected);
+    }
+}
+
+#[cfg(test)]
+mod std_tests {
+    extern crate std;
+
+    use super::*;
+
+    #[test]
+    fn vec_byte_by_byte_with_noise() {
+        let mut d = Decoder::new();
+        let bytes = [
+            0x00, 0xFE, 0x01, 0xFE, 0xFE, 0xA4, 0xE0, 0x03, 0x01, 0x02, 0xFD,
+        ];
+        let mut complete_at = None;
+        // let mut frame_payload = Vec::with_capacity(128);
+        let mut frame_payload = std::vec![0u8; 128];
+        for (i, &b) in bytes.iter().enumerate() {
+            if let State::Complete(n) = d.decode(b, &mut frame_payload).unwrap() {
                 complete_at = Some(i);
             }
         }

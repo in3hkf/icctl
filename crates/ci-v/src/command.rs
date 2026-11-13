@@ -31,7 +31,7 @@ pub trait Command<M: Model>: Sized + Response + std::fmt::Debug {
 
     /// Sub command number.
     #[allow(non_upper_case_globals)]
-    const Sc: Option<u32>;
+    const Sc: &'static [u8];
 
     /// N è la dimensione massima necessaria per serializzare tale comando in
     /// un buffer.

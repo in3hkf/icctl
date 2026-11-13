@@ -13,7 +13,7 @@ pub fn main() -> core::result::Result<(), String> {
     let r = running.clone();
     ctrlc::set_handler(move || r.store(false, Ordering::SeqCst)).map_err(|e| format!("{e}"))?;
 
-    let ep = "/dev/cu.usbmodem1201".into();
+    let ep = "/dev/cu.usbmodem11201".into();
 
     let mut driver = UsbPort::connect(ep).map_err(|e| format!("{e}"))?;
     let mut ic705 = Radio::with_model(Ic705).driver(driver);
@@ -22,7 +22,7 @@ pub fn main() -> core::result::Result<(), String> {
         .exec(read_transceiver_id())
         .map_err(|e| format!("{e}"))?;
 
-    println!("Response: {res:?}");
+    println!("Response: {res}");
 
     Ok(())
 }

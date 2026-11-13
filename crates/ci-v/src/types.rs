@@ -1,4 +1,5 @@
 use core::fmt::Display;
+use std::fmt::UpperHex;
 
 use thiserror::Error;
 
@@ -38,8 +39,20 @@ impl Address {
 #[derive(Debug)]
 pub struct TransceiverId(pub(crate) u8);
 
+impl core::fmt::Display for TransceiverId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Transceiver ID: {:X}", self.0)
+    }
+}
+
 impl TransceiverId {
     pub const fn get(&self) -> u8 {
         self.0
+    }
+}
+
+impl UpperHex for TransceiverId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:X}", self.0)
     }
 }

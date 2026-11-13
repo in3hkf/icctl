@@ -78,8 +78,8 @@ impl Driver for UsbPort {
     type Frame = Frame;
 
     fn receive_frame(&mut self) -> Result<Self::Frame, Self::Error> {
-        let mut payload = Vec::with_capacity(Self::BUFSIZE);
-        let mut rx_buffer = Vec::with_capacity(Self::BUFSIZE);
+        let mut payload = vec![0u8; Self::BUFSIZE];
+        let mut rx_buffer = vec![0u8; Self::BUFSIZE];
 
         loop {
             match self.reader.read_until(0xFD, &mut rx_buffer) {
@@ -90,8 +90,10 @@ impl Driver for UsbPort {
                     }
 
                     for b in rx_buffer.iter() {
-                        if self.decoder.decode(*b, payload.as_mut_slice())? == State::Complete {
-                            return Ok(Frame::with_payload(payload));
+                        if let State::Complete(n) =
+                            self.decoder.decode(*b, payload.as_mut_slice())?
+                        {
+                            return Ok(Frame::with_payload(&payload[..n]));
                         }
                     }
                 }
@@ -112,6 +114,7 @@ impl Driver for UsbPort {
     fn send_frame(&mut self, frame: &Self::Frame) -> Result<usize, Self::Error> {
         let mut tx_buffer = [0; 1024];
         let n = Encoder::encode(frame, tx_buffer.as_mut_slice())?;
+        // println!("Sending Frame payload: {:X?}", &tx_buffer[0..n]);
         let m = self.reader.get_mut().write(&tx_buffer[0..n])?;
         Ok(m)
     }
