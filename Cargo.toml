@@ -10,6 +10,7 @@ license-file = "LICENSE"
 
 [workspace]
 members = [
+    "crates/tools",
     "crates/ci-v",
     "crates/ci-v-link",
     "crates/all-model",
