@@ -37,7 +37,7 @@ impl Address {
 /// Tale valore, non modificabile dai menù della radio, è quello restituito dal
 /// comando CI-V 19 00.
 #[derive(Debug)]
-pub struct TransceiverId(pub(crate) u8);
+pub struct TransceiverId(pub u8);
 
 impl core::fmt::Display for TransceiverId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

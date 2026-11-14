@@ -8,21 +8,8 @@ repository.workspace = true
 description.workspace = true
 license-file.workspace = true
 
-[features]
-cli = ["dep:ctrlc"]
-
 [dependencies]
 serialport = "4.10.1"
 thiserror = { version = "2.0.21", default-features = false }
 ctrlc = { version = "3", optional = true }
 ci-v-link = { version = "0.1", path = "../ci-v-link" }
-
-[[bin]]
-name = "simple"
-path = "src/bin/simple.rs"
-required-features = ["cli"]
-
-[[bin]]
-name = "ctl"
-path = "src/bin/ctl.rs"
-required-features = ["cli"]

@@ -156,11 +156,3 @@ impl<M: Model, D: Driver> Radio<M, D> {
         }
     }
 }
-
-pub struct Ic705;
-
-impl Model for Ic705 {
-    const Transceiver_Id: u8 = 0xA4;
-
-    const Name: &'static str = "IC-705";
-}

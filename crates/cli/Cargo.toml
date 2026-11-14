@@ -1,0 +1,30 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+description.workspace = true
+license-file.workspace = true
+
+[features]
+cli = ["dep:ctrlc"]
+
+[dependencies]
+serialport = "4.10.1"
+thiserror = { version = "2.0.21", default-features = false }
+ctrlc = { version = "3", optional = true }
+all-model = { version = "0.1", path = "../all-model" }
+ci-v = { version = "0.1", path = "../ci-v" }
+ci-v-link = { version = "0.1", path = "../ci-v-link" }
+ic-705 = { version = "0.1", path = "../ic-705" }
+
+[[bin]]
+name = "simple"
+path = "src/bin/simple.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "ctl"
+path = "src/bin/ctl.rs"
+required-features = ["cli"]

@@ -11,6 +11,8 @@ use serialport::SerialPort;
 use std::{boxed::Box, string::String, vec::Vec};
 use thiserror::Error;
 
+const EOM_CODE: u8 = 0xFD;
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
@@ -82,7 +84,7 @@ impl Driver for UsbPort {
         let mut rx_buffer = vec![0u8; Self::BUFSIZE];
 
         loop {
-            match self.reader.read_until(0xFD, &mut rx_buffer) {
+            match self.reader.read_until(EOM_CODE, &mut rx_buffer) {
                 Ok(n) => {
                     // se read_until ritorna 0 significa che driver è arrivato ad EoF.
                     if n == 0 {

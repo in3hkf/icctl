@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use ci_v::Ic705;
-use ci_v::Radio;
+use all_model::commands::read_transceiver_id;
 use ci_v::command::{Command, Response};
-use ci_v::commands::read_transceiver_id;
 use ci_v::drivers::usb::UsbPort;
+use ci_v::radio::Radio;
 use ci_v_link::driver::Driver;
+use ic_705::Ic705;
 
 pub fn main() -> core::result::Result<(), String> {
     let running = Arc::new(AtomicBool::new(true));

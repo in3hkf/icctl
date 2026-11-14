@@ -9,7 +9,13 @@ license-file = "LICENSE"
 
 
 [workspace]
-members = ["crates/ci-v", "crates/ci-v-link"]
+members = [
+    "crates/ci-v",
+    "crates/ci-v-link",
+    "crates/all-model",
+    "crates/ic-705",
+    "crates/cli"
+]
 resolver = "3"
 
 [workspace.dependencies]
