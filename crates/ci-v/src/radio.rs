@@ -143,7 +143,7 @@ impl<M: Model, D: Driver> Radio<M, D> {
         let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
         payload.push(self.get_radio_address());
         payload.push(self.get_controller_address());
-        payload.extend_from_slice(command);
+        payload.extend_from_slice(&command);
         let req_frame = D::Frame::with_payload(payload);
 
         self.driver

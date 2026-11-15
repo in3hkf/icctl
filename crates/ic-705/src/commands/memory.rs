@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 
-use ci_v::command::{Command, Response};
+use ci_v::command::{Command, Octets, Response};
 use thiserror::Error;
 
 use crate::{
@@ -35,7 +35,6 @@ impl ReadContent<Empty> {
 pub struct WithGroupAndChannel {
     group: ChannelGroup,
     channel: Channel,
-    buffer: Vec<u8>,
 }
 
 #[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -58,11 +57,9 @@ impl ReadContent<WithGroup> {
         let ch = Channel::channel(channel)?;
         let WithGroup(group) = self.0;
         match (group.is_call_group(), ch.is_call_channel()) {
-            (true, true) | (false, false) => Ok(ReadContent(WithGroupAndChannel {
-                group,
-                channel: ch,
-                buffer: Vec::default(),
-            })),
+            (true, true) | (false, false) => {
+                Ok(ReadContent(WithGroupAndChannel { group, channel: ch }))
+            }
             (true, false) => {
                 let ChannelType::NoCall(ch) = ch.0 else {
                     unreachable!("function is_call_channel return false, but Channel Type is Call");
@@ -90,13 +87,12 @@ impl Command<Ic705> for ReadContent<WithGroupAndChannel> {
 
     type Response = MemoryContent;
 
-    fn encode(&mut self) -> &[u8] {
-        self.0.buffer = Vec::with_capacity(Self::N);
-        self.0.buffer.push(Self::Cn);
-        self.0.buffer.extend_from_slice(Self::Sc);
-        self.0.buffer.extend_from_slice(&self.0.group.to_bcd());
-        self.0.buffer.extend_from_slice(&self.0.channel.to_bcd());
-        &self.0.buffer
+    fn encode(&mut self) -> Octets {
+        Octets::with_cn(Self::Cn)
+            .sc(Self::Sc)
+            .format(&self.0.group.to_bcd())
+            .format(&self.0.channel.to_bcd())
+            .done()
     }
 }
 
@@ -108,6 +104,7 @@ impl Response for MemoryContent {
 
     fn response(payload: &[u8]) -> Result<Self, Self::Error> {
         println!("ReadContent Response payload: {payload:X?}");
+        println!("payload length: {}", payload.len());
         Ok(MemoryContent)
     }
 }

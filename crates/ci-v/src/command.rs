@@ -1,3 +1,5 @@
+use core::ops::Deref;
+
 use crate::radio::Model;
 
 pub const NG: u8 = 0xFA;
@@ -42,5 +44,113 @@ pub trait Command<M: Model>: Sized + std::fmt::Debug {
 
     /// encode esegue la codifica del comando come sequenza di byte utile al invio,
     /// come richiesta alla radio, al driver.
-    fn encode(&mut self) -> &[u8];
+    fn encode(&mut self) -> Octets;
+}
+
+/// Sequenza di bytes che codifica un comando CI-V:
+/// Tale sequenza contiene Cn ed, eventualmente, Sc e Data nei comandi che fanno
+/// uso di tali valori.
+///
+/// Si costruisce con [`Octets::with_cn`], che richiede il comando `Cn`, e poi
+/// si concatenano nell'ordine corretto i campi opzionali `Sc` e i `format`
+/// che compongono `Data`. L'ordine è imposto dal sistema dei tipi (typestate):
+/// un ordine errato non compila. Si chiude con `done()`.
+///
+/// ```ignore
+/// let octets = Octets::with_cn(0x1A)
+///     .sc(&[0x05])
+///     .format(&group.to_bcd())
+///     .format(&channel.to_bcd())
+///     .done();
+/// ```
+#[derive(Debug, Clone)]
+pub struct Octets(Vec<u8>);
+
+impl Octets {
+    /// Avvia la codifica con il codice comando `Cn`.
+    ///
+    /// È l'unico punto d'ingresso: non può esistere un `Octets` senza `Cn`.
+    pub fn with_cn(cn: u8) -> WithCn {
+        let mut v = Vec::with_capacity(16);
+        v.push(cn);
+        WithCn(v)
+    }
+}
+
+/// Stato della codifica: è stato inserito solo `Cn`.
+///
+/// Da qui si può proseguire con `sc`, con `format`, oppure chiudere con `done`.
+#[derive(Debug)]
+pub struct WithCn(Vec<u8>);
+
+/// Stato della codifica: sono stati inseriti `Cn` e `Sc`.
+///
+/// Da qui si può proseguire con `format`, oppure chiudere con `done`.
+#[derive(Debug)]
+pub struct WithSc(Vec<u8>);
+
+/// Stato della codifica: sono stati inseriti `Cn`, l'eventuale `Sc` e almeno
+/// un `format` di `Data`.
+///
+/// Da qui si possono aggiungere altri `format`, oppure chiudere con `done`.
+#[derive(Debug)]
+pub struct WithData(Vec<u8>);
+
+impl WithCn {
+    /// Aggiunge il subcommand `Sc` (opzionale).
+    ///
+    /// Può essere chiamato al più una volta, subito dopo `Cn`.
+    pub fn sc(mut self, sc: &[u8]) -> WithSc {
+        self.0.extend_from_slice(sc);
+        WithSc(self.0)
+    }
+
+    /// Aggiunge il primo `format` del campo `Data`, senza `Sc`.
+    pub fn format(mut self, f: &[u8]) -> WithData {
+        self.0.extend_from_slice(f);
+        WithData(self.0)
+    }
+
+    /// Termina la codifica di un comando composto dal solo `Cn`.
+    pub fn done(self) -> Octets {
+        Octets(self.0)
+    }
+}
+
+impl WithSc {
+    /// Aggiunge il primo `format` del campo `Data`.
+    pub fn format(mut self, f: &[u8]) -> WithData {
+        self.0.extend_from_slice(f);
+        WithData(self.0)
+    }
+
+    /// Termina la codifica di un comando composto da `Cn + Sc`.
+    pub fn done(self) -> Octets {
+        Octets(self.0)
+    }
+}
+
+impl WithData {
+    /// Aggiunge un ulteriore `format` al campo `Data`.
+    ///
+    /// Può essere chiamato quante volte serve: i byte vengono concatenati
+    /// nell'ordine delle chiamate.
+    pub fn format(mut self, f: &[u8]) -> Self {
+        self.0.extend_from_slice(f);
+        self
+    }
+
+    /// Termina la codifica di un comando completo `Cn + Sc? + Data`.
+    pub fn done(self) -> Octets {
+        Octets(self.0)
+    }
+}
+
+impl Deref for Octets {
+    type Target = [u8];
+
+    /// Accesso in sola lettura ai byte codificati.
+    fn deref(&self) -> &[u8] {
+        &self.0
+    }
 }
