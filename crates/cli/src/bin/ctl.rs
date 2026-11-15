@@ -7,13 +7,14 @@ use ci_v::drivers::usb::UsbPort;
 use ci_v::radio::Radio;
 use ci_v_link::driver::Driver;
 use ic_705::Ic705;
+use ic_705::commands::read_memory;
 
 pub fn main() -> core::result::Result<(), String> {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || r.store(false, Ordering::SeqCst)).map_err(|e| format!("{e}"))?;
 
-    let ep = "/dev/cu.usbmodem11201".into();
+    let ep = "/dev/cu.usbmodem1201".into();
 
     let mut driver = UsbPort::connect(ep).map_err(|e| format!("{e}"))?;
     let mut ic705 = Radio::with_model(Ic705).driver(driver);
@@ -23,6 +24,16 @@ pub fn main() -> core::result::Result<(), String> {
         .map_err(|e| format!("{e}"))?;
 
     println!("Response: {res}");
+
+    let cmd = read_memory()
+        .group(1)
+        .map_err(|e| format!("{e}"))?
+        .channel(11)
+        .map_err(|e| format!("{e}"))?;
+
+    let res = ic705.exec(cmd).map_err(|e| format!("{e}"))?;
+
+    println!("Response: {res:?}");
 
     Ok(())
 }

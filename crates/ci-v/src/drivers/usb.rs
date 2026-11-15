@@ -116,7 +116,7 @@ impl Driver for UsbPort {
     fn send_frame(&mut self, frame: &Self::Frame) -> Result<usize, Self::Error> {
         let mut tx_buffer = [0; 1024];
         let n = Encoder::encode(frame, tx_buffer.as_mut_slice())?;
-        // println!("Sending Frame payload: {:X?}", &tx_buffer[0..n]);
+        println!("Sending Frame payload: {:X?}", &tx_buffer[0..n]);
         let m = self.reader.get_mut().write(&tx_buffer[0..n])?;
         Ok(m)
     }

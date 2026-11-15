@@ -2,124 +2,41 @@ use std::convert::Infallible;
 
 use ci_v::command::{Command, Response};
 use thiserror::Error;
+use tools::bcd::Bcd;
 
-use crate::Ic705;
+use crate::{
+    Ic705,
+    commands::formats::{Channel, ChannelError, ChannelGroup, ChannelGroupError, ChannelType},
+};
 
-/// Memory group number
-/// 0000 ~ 0099: Memory channel group
-///        0100: Call channel group
-#[derive(Debug)]
-pub struct ChannelGroup(u8);
-
-#[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[error("Valid Channel Groups are between 0 and 99. Group {0} is not valid.")]
-pub struct ChannelGroupError(u8);
-
-impl ChannelGroup {
-    /// group ritorna il `ChannelGroup` specificato nel parametro `group`se tale
-    /// valore rientra nel range ammesso: 0000 - 0099. Altrimenti la funzione
-    /// ritorna l'errore `ChannelGroupError`.
-    pub fn group(group: u8) -> Result<Self, ChannelGroupError> {
-        match group {
-            n @ _ if n <= 100 => Ok(Self(n)),
-            m @ _ => Err(ChannelGroupError(m)),
-        }
-    }
-
-    /// call ritorna il gruppo di canali associato alle frequenze `Call`.
-    /// Tale gruppo ha necessariamente valore 100.
-    pub fn call() -> Self {
-        Self(100)
-    }
-
-    #[inline]
-    fn is_call_group(&self) -> bool {
-        self.0 == 100
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug)]
-enum ChannelType {
-    Call(u8),
-    NoCall(u8),
-}
-
-/// Memory channel numbers
-/// • When Memory channel group is selected,
-///     0000 ~ 0099: 00 ~ 99
-/// • When Call channel group is selected,
-///     0000, 0001: 144 C1, C2
-///     0002, 0003: 430 C1, C2
-#[derive(Debug)]
-pub struct Channel(ChannelType);
-
-#[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[error("Valid Channels are between 0 and 99. Channel {0} is not valid.")]
-pub struct ChannelError(u8);
-
-#[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[error("Valid Call Channels are between 0 and 3. Call Channel {0} is not valid.")]
-pub struct CallChannelError(u8);
-
-impl Channel {
-    /// channel ritorna il `Channel` specificato nel parametro `channel` se tale
-    /// valore rientra nel range ammesso: 0000 - 0099. Altrimenti la funzione
-    /// ritorna l'errore `ChannelError`.
-    pub fn channel(channel: u8) -> Result<Self, ChannelError> {
-        match channel {
-            n @ _ if n <= 100 => Ok(Self(ChannelType::NoCall(n))),
-            m @ _ => Err(ChannelError(m)),
-        }
-    }
-
-    /// call ritorna il canale associato alle frequenze `Call`.
-    /// Tale canale ha necessariamente uno dei valori:
-    ///
-    /// | Banda | C1 | C2 |
-    /// |-------|----|----|
-    /// | 144   | 0  | 1  |
-    /// | 433   | 2  | 3  |
-    ///
-    pub fn call(channel: u8) -> Result<Self, CallChannelError> {
-        match channel {
-            n @ _ if n <= 3 => Ok(Self(ChannelType::Call(n))),
-            m @ _ => Err(CallChannelError(m)),
-        }
-    }
-
-    #[inline]
-    fn is_call_channel(&self) -> bool {
-        match self.0 {
-            ChannelType::Call(_) => true,
-            ChannelType::NoCall(_) => false,
-        }
-    }
+pub fn read_memory() -> ReadContent<Empty> {
+    ReadContent(Empty)
 }
 
 #[derive(Debug)]
 pub struct ReadContent<Mode>(Mode);
 
-struct Empty;
+pub struct Empty;
 
-struct WithGroup(ChannelGroup);
+pub struct WithGroup(ChannelGroup);
 
 impl ReadContent<Empty> {
-    pub fn group(group: u8) -> Result<ReadContent<WithGroup>, ChannelGroupError> {
+    pub fn group(self, group: u8) -> Result<ReadContent<WithGroup>, ChannelGroupError> {
         let cg = ChannelGroup::group(group)?;
         Ok(ReadContent(WithGroup(cg)))
     }
 
-    pub fn call_group() -> ReadContent<WithGroup> {
+    pub fn call_group(self) -> ReadContent<WithGroup> {
         let ccg = ChannelGroup::call();
         ReadContent(WithGroup(ccg))
     }
 }
 
 #[derive(Debug)]
-struct WithGroupAndChannel {
+pub struct WithGroupAndChannel {
     group: ChannelGroup,
     channel: Channel,
+    buffer: Vec<u8>,
 }
 
 #[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -142,18 +59,22 @@ impl ReadContent<WithGroup> {
         let ch = Channel::channel(channel)?;
         let WithGroup(group) = self.0;
         match (group.is_call_group(), ch.is_call_channel()) {
-            (true, true) | (false, false) => {
-                Ok(ReadContent(WithGroupAndChannel { group, channel: ch }))
-            }
+            (true, true) | (false, false) => Ok(ReadContent(WithGroupAndChannel {
+                group,
+                channel: ch,
+                buffer: Vec::default(),
+            })),
             (true, false) => {
                 let ChannelType::NoCall(ch) = ch.0 else {
-                    panic!("function is_call_channel return false, but Channel Type is Call");
+                    unreachable!("function is_call_channel return false, but Channel Type is Call");
                 };
                 Err(ReadContentError::NoCallChannelCallGroup(ch, group.0))
             }
             (false, true) => {
                 let ChannelType::Call(ch) = ch.0 else {
-                    panic!("function is_call_channel return true, but Channel Type is NoCall");
+                    unreachable!(
+                        "function is_call_channel return true, but Channel Type is NoCall"
+                    );
                 };
                 Err(ReadContentError::CallChannelNoCallGroup(ch, group.0))
             }
@@ -169,7 +90,12 @@ impl Command<Ic705> for ReadContent<WithGroupAndChannel> {
     const N: usize = 6;
 
     fn encode(&mut self) -> &[u8] {
-        todo!()
+        self.0.buffer = Vec::with_capacity(Self::N);
+        self.0.buffer.push(Self::Cn);
+        self.0.buffer.extend_from_slice(Self::Sc);
+        self.0.buffer.extend_from_slice(&self.0.group.to_bcd());
+        self.0.buffer.extend_from_slice(&self.0.channel.to_bcd());
+        &self.0.buffer
     }
 }
 
@@ -179,6 +105,7 @@ impl Response for ReadContent<WithGroupAndChannel> {
     type Error = Infallible;
 
     fn response(payload: &[u8]) -> Result<Self::Response, Self::Error> {
-        todo!()
+        println!("ReadContent Response payload: {payload:X?}");
+        Ok(())
     }
 }
