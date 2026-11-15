@@ -2,10 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use all_model::commands::read_transceiver_id;
-use ci_v::command::{Command, Response};
 use ci_v::drivers::usb::UsbPort;
 use ci_v::radio::Radio;
-use ci_v_link::driver::Driver;
 use ic_705::Ic705;
 use ic_705::commands::read_memory;
 
@@ -16,7 +14,7 @@ pub fn main() -> core::result::Result<(), String> {
 
     let ep = "/dev/cu.usbmodem1201".into();
 
-    let mut driver = UsbPort::connect(ep).map_err(|e| format!("{e}"))?;
+    let driver = UsbPort::connect(ep).map_err(|e| format!("{e}"))?;
     let mut ic705 = Radio::with_model(Ic705).driver(driver);
 
     let res = ic705

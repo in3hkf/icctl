@@ -2,7 +2,6 @@ use std::convert::Infallible;
 
 use ci_v::command::{Command, Response};
 use thiserror::Error;
-use tools::bcd::Bcd;
 
 use crate::{
     Ic705,
