@@ -3,6 +3,8 @@ use std::fmt::UpperHex;
 
 use thiserror::Error;
 
+use crate::command::Response;
+
 /// Address è il byte identificativo di una radio Icom o del Controller.
 /// Ogni radio ha un valore preimpostato che può essere cambiato mediante i menù
 /// della radio.
@@ -42,6 +44,27 @@ pub struct TransceiverId(pub u8);
 impl core::fmt::Display for TransceiverId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Transceiver ID: {:X}", self.0)
+    }
+}
+
+#[derive(Error, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Error {
+    #[error("Response with wrong length: {0}")]
+    Length(usize),
+}
+
+impl Response for TransceiverId {
+    type Error = Error;
+
+    fn response(payload: &[u8]) -> Result<Self, Self::Error> {
+        let length = payload.len();
+        // println!("Response payload: {payload:X?}");
+        // Response payload: [19, 0, A4]
+        if length != 3 {
+            return Err(Error::Length(length));
+        }
+        let tid = payload[length - 1];
+        Ok(TransceiverId(tid))
     }
 }
 

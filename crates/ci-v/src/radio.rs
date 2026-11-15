@@ -3,7 +3,8 @@ use thiserror::Error;
 
 use crate::{
     Address,
-    command::{Command, Response},
+    command::{Command, EVENT_FREQ, EVENT_MODE, NG, OK, Response},
+    radio::CheckResult::Unknown,
     types::TransceiverId,
 };
 
@@ -37,6 +38,18 @@ pub enum Error<D: Driver, R: Response> {
 
     #[error("Command error: {0}")]
     Command(R::Error),
+
+    #[error("Frame is a Transceive Event not a command response")]
+    EventReceived,
+
+    #[error("Command resposne in NG")]
+    NGResponse,
+
+    #[error("Command request received. Is echo on?")]
+    IsEcho,
+
+    #[error("Unknown frame received")]
+    Unknown,
 }
 
 /// Radio
@@ -122,7 +135,10 @@ impl<M: Model, D: Driver> Radio<M, D> {
     }
 
     /// exec invia alla Radio il comando
-    pub fn exec<C: Command<M>>(&mut self, mut cmd: C) -> Result<C::Response, Error<D, C>> {
+    pub fn exec<C: Command<M>>(
+        &mut self,
+        mut cmd: C,
+    ) -> Result<C::Response, Error<D, C::Response>> {
         let command = cmd.encode();
         let mut payload: Vec<u8> = Vec::with_capacity(C::N + 5);
         payload.push(self.get_radio_address());
@@ -135,8 +151,32 @@ impl<M: Model, D: Driver> Radio<M, D> {
             .map_err(|e| Error::Driver(e))?;
 
         let res_frame = self.driver.receive_frame().map_err(|e| Error::Driver(e))?;
-
-        C::response(res_frame.payload()).map_err(|e| Error::Command(e))
+        let payload = res_frame.payload();
+        match self.check_received_frame::<C>(payload) {
+            CheckResult::IsNG(i) => {
+                println!("Response is NG: {:X?}", payload[i]);
+                Err(Error::NGResponse)
+            }
+            CheckResult::IsOK(_) => todo!(),
+            CheckResult::IsRequest(s, e) => {
+                println!(
+                    "Response is a request: is Echo activated? {:X?}",
+                    &payload[s..e]
+                );
+                Err(Error::IsEcho)
+            }
+            CheckResult::IsResponse(s, e) => {
+                C::Response::response(&payload[s..e]).map_err(|e| Error::Command(e))
+            }
+            CheckResult::IsEvent(s, e) => {
+                println!("Event: {:X?}", &payload[s..e]);
+                Err(Error::EventReceived)
+            }
+            Unknown(s, e) => {
+                println!("Unknown frame received: {:X?}", &payload[s..e]);
+                Err(Error::Unknown)
+            }
+        }
     }
 }
 
@@ -155,4 +195,43 @@ impl<M: Model, D: Driver> Radio<M, D> {
             None => 0xE0,
         }
     }
+
+    #[doc(hidden)]
+    // check_received_frame permette di verificare che il frame ricevuto sia la
+    // risposta al comando inviato.
+    fn check_received_frame<C: Command<M>>(&self, payload: &[u8]) -> CheckResult {
+        let (ctrl, radio) = (self.get_controller_address(), self.get_radio_address());
+        let len = payload.len();
+
+        // radio -> controller: il primo indirizzo è la destinazione
+        if let Some(rest) = payload.strip_prefix(&[ctrl, radio]) {
+            return match rest {
+                [NG] => CheckResult::IsNG(2),
+                [OK] => CheckResult::IsOK(2),
+                // prima la risposta al comando inviato...
+                [cn, tail @ ..] if *cn == C::Cn && tail.starts_with(C::Sc) => {
+                    CheckResult::IsResponse(2, len)
+                }
+                // ...poi gli eventi spontanei (transceive)
+                [EVENT_FREQ | EVENT_MODE, ..] => CheckResult::IsEvent(2, len),
+                _ => Unknown(0, len),
+            };
+        }
+
+        // controller -> radio (eco della nostra request o di un altro controller)
+        if payload.starts_with(&[radio, ctrl]) {
+            return CheckResult::IsRequest(0, len);
+        }
+
+        Unknown(0, len)
+    }
+}
+
+enum CheckResult {
+    IsNG(usize),
+    IsOK(usize),
+    IsRequest(usize, usize),
+    IsResponse(usize, usize),
+    IsEvent(usize, usize),
+    Unknown(usize, usize),
 }

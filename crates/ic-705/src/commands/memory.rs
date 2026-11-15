@@ -88,6 +88,8 @@ impl Command<Ic705> for ReadContent<WithGroupAndChannel> {
 
     const N: usize = 6;
 
+    type Response = MemoryContent;
+
     fn encode(&mut self) -> &[u8] {
         self.0.buffer = Vec::with_capacity(Self::N);
         self.0.buffer.push(Self::Cn);
@@ -98,13 +100,14 @@ impl Command<Ic705> for ReadContent<WithGroupAndChannel> {
     }
 }
 
-impl Response for ReadContent<WithGroupAndChannel> {
-    type Response = ();
+#[derive(Debug)]
+pub struct MemoryContent;
 
+impl Response for MemoryContent {
     type Error = Infallible;
 
-    fn response(payload: &[u8]) -> Result<Self::Response, Self::Error> {
+    fn response(payload: &[u8]) -> Result<Self, Self::Error> {
         println!("ReadContent Response payload: {payload:X?}");
-        Ok(())
+        Ok(MemoryContent)
     }
 }
