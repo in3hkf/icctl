@@ -1,5 +1,5 @@
 use ci_v::{
-    command::{Command, Octets},
+    command::{self, Bytes, Command},
     radio::Model,
     types::TransceiverId,
 };
@@ -20,9 +20,9 @@ impl<M: Model> Command<M> for ReadTransceiverID {
 
     type Response = TransceiverId;
 
-    fn encode(&mut self) -> Octets {
-        Octets::with_cn(<Self as Command<M>>::Cn)
+    fn encode(&mut self) -> Bytes {
+        command::Encoder::with_cn(<Self as Command<M>>::Cn)
             .sc(<Self as Command<M>>::Sc)
-            .done()
+            .encode()
     }
 }

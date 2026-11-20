@@ -44,29 +44,32 @@ pub trait Command<M: Model>: Sized + std::fmt::Debug {
 
     /// encode esegue la codifica del comando come sequenza di byte utile al invio,
     /// come richiesta alla radio, al driver.
-    fn encode(&mut self) -> Octets;
+    fn encode(&mut self) -> Bytes;
 }
 
 /// Sequenza di bytes che codifica un comando CI-V:
 /// Tale sequenza contiene Cn ed, eventualmente, Sc e Data nei comandi che fanno
 /// uso di tali valori.
-///
-/// Si costruisce con [`Octets::with_cn`], che richiede il comando `Cn`, e poi
-/// si concatenano nell'ordine corretto i campi opzionali `Sc` e i `format`
-/// che compongono `Data`. L'ordine è imposto dal sistema dei tipi (typestate):
-/// un ordine errato non compila. Si chiude con `done()`.
+#[derive(Debug, Clone)]
+pub struct Bytes(Vec<u8>);
+
+/// Si crea una versione codificata di un comando con [`Encoder::with_cn`], che
+/// richiede il comando `Cn`, e poi si concatenano nell'ordine corretto i campi
+/// opzionali `Sc` e i `format` che compongono `Data`. L'ordine è imposto dal
+/// sistema dei tipi (typestate): un ordine errato non compila.
+/// Si chiude con `done()`.
 ///
 /// ```ignore
-/// let octets = Octets::with_cn(0x1A)
+/// let bytes = Encoder::with_cn(0x1A)
 ///     .sc(&[0x05])
 ///     .format(&group.to_bcd())
 ///     .format(&channel.to_bcd())
-///     .done();
+///     .encode();
 /// ```
 #[derive(Debug, Clone)]
-pub struct Octets(Vec<u8>);
+pub struct Encoder;
 
-impl Octets {
+impl Encoder {
     /// Avvia la codifica con il codice comando `Cn`.
     ///
     /// È l'unico punto d'ingresso: non può esistere un `Octets` senza `Cn`.
@@ -112,8 +115,8 @@ impl WithCn {
     }
 
     /// Termina la codifica di un comando composto dal solo `Cn`.
-    pub fn done(self) -> Octets {
-        Octets(self.0)
+    pub fn encode(self) -> Bytes {
+        Bytes(self.0)
     }
 }
 
@@ -125,8 +128,8 @@ impl WithSc {
     }
 
     /// Termina la codifica di un comando composto da `Cn + Sc`.
-    pub fn done(self) -> Octets {
-        Octets(self.0)
+    pub fn encode(self) -> Bytes {
+        Bytes(self.0)
     }
 }
 
@@ -141,12 +144,12 @@ impl WithData {
     }
 
     /// Termina la codifica di un comando completo `Cn + Sc? + Data`.
-    pub fn done(self) -> Octets {
-        Octets(self.0)
+    pub fn encode(self) -> Bytes {
+        Bytes(self.0)
     }
 }
 
-impl Deref for Octets {
+impl Deref for Bytes {
     type Target = [u8];
 
     /// Accesso in sola lettura ai byte codificati.

@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 
-use ci_v::command::{Command, Octets, Response};
+use ci_v::command::{self, Bytes, Command, Response};
 use thiserror::Error;
 
 use crate::{
@@ -87,12 +87,12 @@ impl Command<Ic705> for ReadContent<WithGroupAndChannel> {
 
     type Response = MemoryContent;
 
-    fn encode(&mut self) -> Octets {
-        Octets::with_cn(Self::Cn)
+    fn encode(&mut self) -> Bytes {
+        command::Encoder::with_cn(Self::Cn)
             .sc(Self::Sc)
             .format(&self.0.group.to_bcd())
             .format(&self.0.channel.to_bcd())
-            .done()
+            .encode()
     }
 }
 
